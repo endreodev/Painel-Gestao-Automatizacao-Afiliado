@@ -1,4 +1,4 @@
-# ml-group
+# Painel-Gestao-Automatizacao-Afiliado
 
 Caçador de ofertas de **ferramentas** no Mercado Livre com publicação automática em
 **grupo de WhatsApp** — mecânica, marcenaria, construção, jardinagem, elétrica,
@@ -72,7 +72,7 @@ se ela estiver errada, o filtro de comissão e a pontuação erram junto.
 ## Instalação
 
 ```bash
-cd d:\ml-group
+cd d:\Painel-Gestao-Automatizacao-Afiliado
 php tests/smoke.php        # autoteste, não toca no ML nem no WhatsApp
 php bin/mlgroup conectar   # instala a ponte, mostra o QR e escolhe o grupo
 ```
@@ -229,15 +229,15 @@ nada é publicado e nada se perde — a fila espera o dia seguinte.
 
 ```
 Programa:    php
-Argumentos:  D:\ml-group\bin\mlgroup ciclo
-Iniciar em:  D:\ml-group
+Argumentos:  D:\Painel-Gestao-Automatizacao-Afiliado\bin\mlgroup ciclo
+Iniciar em:  D:\Painel-Gestao-Automatizacao-Afiliado
 Gatilho:     repetir a cada 1 hora
 ```
 
 **cron** (Linux):
 
 ```
-0 * * * * cd /caminho/ml-group && php bin/mlgroup ciclo >> storage/logs/cron.log 2>&1
+0 * * * * cd /caminho/Painel-Gestao-Automatizacao-Afiliado && php bin/mlgroup ciclo >> storage/logs/cron.log 2>&1
 ```
 
 ---
