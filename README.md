@@ -12,6 +12,8 @@ A única peça em Node.js é a ponte com o WhatsApp, que existe porque não há 
 com o WhatsApp Web em PHP puro. Ela se instala sozinha no primeiro `conectar` e só
 precisa de Node 20+.
 
+<img width="1894" height="949" alt="image" src="https://github.com/user-attachments/assets/96e69be4-7fcf-4cf4-b867-00efa35a5a8b" />
+
 ---
 
 ## Como funciona
