@@ -1,0 +1,22 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+if (PHP_SAPI !== 'cli') {
+    exit('Este script roda apenas pela linha de comando.');
+}
+
+if (PHP_VERSION_ID < 80100) {
+    exit('E necessario PHP 8.1 ou superior. Versao atual: ' . PHP_VERSION . PHP_EOL);
+}
+
+foreach (['curl', 'pdo_sqlite', 'dom', 'mbstring'] as $extensao) {
+    if (!extension_loaded($extensao)) {
+        exit('Extensao PHP obrigatoria ausente: ' . $extensao . PHP_EOL);
+    }
+}
+
+require __DIR__ . '/../autoload.php';
+
+exit((new \MlGroup\Cli\Console())->executar($argv));

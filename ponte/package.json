@@ -1,0 +1,12 @@
+{
+  "name": "mlgroup-ponte",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Ponte local entre o ml-group (PHP) e o WhatsApp Web",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "link-preview-js": "^3.2.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

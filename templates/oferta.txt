@@ -1,0 +1,17 @@
+{?termometro}🚨 *{termometro}* 🚨{/termometro}
+
+🔧 *{titulo}*
+
+{?preco_original}De ~{preco_original}~{/preco_original}
+💰 *Por {preco}*{?desconto}  ({desconto} OFF){/desconto}
+{?economia}📉 Economia de {economia}{/economia}
+{?menor_preco}🔥 {menor_preco}{/menor_preco}
+
+{?frete_gratis}🚚 {frete_gratis}{/frete_gratis}
+{?full}⚡ {full}{/full}
+{?avaliacao}⭐ {avaliacao}{?total_avaliacoes} ({total_avaliacoes} avaliações){/total_avaliacoes}{/avaliacao}
+{?vendidos}📦 {vendidos} vendidos{/vendidos}
+
+🛒 {link}
+
+_Preço visto em {data} às {hora} e sujeito a alteração pelo vendedor._

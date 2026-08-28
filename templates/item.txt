@@ -1,0 +1,5 @@
+*{indice}.* {titulo}
+💰 *{preco}*{?preco_original}  ~{preco_original}~{/preco_original}{?desconto}  ({desconto} OFF){/desconto}
+{?menor_preco}🔥 {menor_preco}{/menor_preco}
+{?frete_gratis}🚚 {frete_gratis}{/frete_gratis}{?full}  ⚡ {full}{/full}
+🛒 {link}

@@ -1,0 +1,28 @@
+/.env
+/storage/*.sqlite
+/storage/*.sqlite-shm
+/storage/*.sqlite-wal
+/storage/logs/*
+/storage/cache/*
+/storage/whatsapp-sessao/
+/storage/navegador-ml/
+/storage/config-local.json
+!/storage/logs/.gitkeep
+!/storage/cache/.gitkeep
+/ponte/node_modules/
+/ponte/package-lock.json
+/storage/config-local-anterior/
+
+# copias e variantes do banco (o padrao *.sqlite nao pega sufixo depois da extensao)
+/storage/mlgroup.sqlite*
+
+# lista dos seus grupos de WhatsApp: nome e ID de cada um
+/storage/grupos.json
+
+# gerados pelo agendador, com caminhos desta maquina
+/storage/monitor.cmd
+/storage/monitor.vbs
+/storage/monitor.log
+
+# sinal de vida do laco, com o PID do processo
+/storage/pulso/

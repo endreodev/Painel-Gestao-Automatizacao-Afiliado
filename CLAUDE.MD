@@ -1,0 +1,1 @@
+sistema para analize de produtos sertor de ferramentas e envio no grupo de whatsapp deve buscar melhores ferramentas com desconto bom e comissao boa via navegador no mercado livre e integrar ao whatsapp para enviar no grupo de tempo em tempo isso configuravel deve ser em php 

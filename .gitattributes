@@ -1,0 +1,12 @@
+# Normaliza a quebra de linha no repositorio.
+#
+# Sem isto, os arquivos vao para o repositorio com a quebra do Windows e quem
+# clonar em Linux ou Mac recebe tudo com CRLF - o que suja o diff inteiro na
+# primeira vez que alguem salvar um arquivo por la.
+* text=auto eol=lf
+
+# Estes precisam de CRLF para o Windows executar
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.png binary
