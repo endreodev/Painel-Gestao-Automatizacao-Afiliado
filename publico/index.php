@@ -2,7 +2,8 @@
 /**
  * Porta de entrada do painel web.
  *
- * Servido pelo servidor embutido do PHP, preso a 127.0.0.1:
+ * Servido pelo servidor embutido do PHP, preso a 127.0.0.1 (no container ele
+ * escuta em 0.0.0.0 e a lista de PAINEL_ORIGENS diz quem entra):
  *   php bin/mlgroup painel
  */
 
@@ -19,7 +20,7 @@ $metodo = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 // requisicao de fora da maquina nao passa: o painel edita configuracao
 $remoto = $_SERVER['REMOTE_ADDR'] ?? '';
 
-if (!in_array($remoto, ['127.0.0.1', '::1', ''], true)) {
+if (!\MlGroup\Support\Rede::liberado($remoto)) {
     http_response_code(403);
     exit('O painel responde apenas localmente.');
 }

@@ -1,0 +1,136 @@
+===========================================================================
+ ml-group - rodando no Docker
+===========================================================================
+
+Um container so, com PHP, Node e Chromium dentro. Voce nao precisa instalar
+PHP, Node nem Chrome na maquina: so o Docker Desktop.
+
+O painel continua em http://127.0.0.1:8321 e os comandos continuam os mesmos -
+mudam apenas de "php bin/mlgroup X" para
+"docker compose exec mlgroup php bin/mlgroup X".
+
+
+O QUE INSTALAR
+---------------------------------------------------------------------------
+Docker Desktop (Windows, Mac ou Linux). Conferir:
+
+       docker --version
+       docker compose version
+
+
+COMO SUBIR
+---------------------------------------------------------------------------
+Abra o terminal dentro da pasta do projeto.
+
+1. Confira que existe um arquivo .env. Se nao existir:
+
+       copy .env.example .env
+
+   (o docker-compose monta o .env de fora para dentro; se ele nao existir, o
+   Docker cria uma PASTA com esse nome e o sistema sobe sem configuracao)
+
+2. Monte a imagem. Demora uns 5 minutos na primeira vez:
+
+       docker compose build
+
+3. Traga o storage que ja existe nesta pasta - banco, sessao do WhatsApp,
+   ajustes do painel e historico:
+
+       docker compose run --rm importar
+
+   Antes disso, PARE o sistema que roda no Windows (feche o laco e o painel).
+   Copiar o banco no meio de uma gravacao traz um arquivo pela metade.
+
+   Pule este passo so se for uma instalacao do zero.
+
+4. Suba:
+
+       docker compose up -d
+
+5. Confira:
+
+       docker compose exec mlgroup php bin/mlgroup status
+
+   Se o WhatsApp aparecer desconectado, leia o QR:
+
+       docker compose exec mlgroup php bin/mlgroup conectar
+
+
+O DIA A DIA
+---------------------------------------------------------------------------
+  Painel                http://127.0.0.1:8321
+  Situacao              docker compose exec mlgroup php bin/mlgroup status
+  Um ciclo agora        docker compose exec mlgroup php bin/mlgroup ciclo
+  Trocar de grupo       docker compose exec mlgroup php bin/mlgroup grupos
+  Acompanhar            docker compose logs -f mlgroup
+  Parar                 docker compose stop
+  Subir de novo         docker compose up -d
+  Depois de mexer em src/   docker compose up -d --build
+
+O container sobe o painel e o laco de publicacao juntos, e volta sozinho
+quando o computador reinicia. Nao existe tarefa agendada aqui: o
+"php bin/mlgroup agendar" e do Windows e nao e usado no Docker.
+
+
+ONDE FICAM AS COISAS
+---------------------------------------------------------------------------
+Continuam sendo seus arquivos, montados de fora (editar e salvar basta):
+
+  .env                 chaves e driver do WhatsApp
+  config/              padroes do sistema (canais, nicho, buscas)
+  templates/           texto das mensagens
+
+Fica DENTRO de um volume do Docker, e nao mais na pasta do projeto:
+
+  storage/             banco, sessao do WhatsApp, logs, historico
+
+Por que: o banco e SQLite em modo WAL, que precisa de trava e memoria
+compartilhada de verdade. Pasta do Windows montada dentro do Linux nao
+entrega isso - o banco trava ou devolve "disk I/O error" no meio de um ciclo.
+
+Para tirar uma copia do storage do container para ca:
+
+       docker compose stop
+       docker cp mlgroup:/app/storage ./storage-do-container
+
+Para levar o de ca para dentro de novo (sobrescreve o que estiver la):
+
+       docker compose run --rm importar
+
+
+ATENCAO - A SESSAO DO WHATSAPP CONTINUA SENDO UMA SO
+---------------------------------------------------------------------------
+O WhatsApp aceita a sessao em um dispositivo por vez. Se voce importou o
+storage e subiu o container, PARE de rodar o sistema direto no Windows: os
+dois usam a mesma sessao e um derruba o outro, as vezes de vez - exigindo
+novo QR.
+
+Escolha um dos dois modos e fique nele.
+
+
+O QUE NAO FUNCIONA NO CONTAINER
+---------------------------------------------------------------------------
+O login do Link Builder do Mercado Livre:
+
+       php bin/mlgroup ml-login
+
+A tela do ML exige login com reCAPTCHA - alguem digitando numa janela de
+verdade - e nao ha tela dentro do container. O sistema nao para por isso:
+sem o link oficial ele usa o modelo de link, que leva a sua tag do mesmo
+jeito. Quem quiser o link oficial faz o login rodando no Windows.
+
+
+SE ALGO NAO SOBIR
+---------------------------------------------------------------------------
+       docker compose logs mlgroup
+       docker compose exec mlgroup php bin/mlgroup status
+       docker compose exec mlgroup cat storage/logs/ponte.log
+       docker compose exec mlgroup chromium --version
+
+Painel devolvendo 403: a rede do Docker desta maquina esta fora das faixas de
+PAINEL_ORIGENS. Veja o IP que chegou nos logs e acrescente a faixa no
+docker-compose.yml.
+
+Autoteste (roda em banco e configuracao proprios, nao mexe nos seus dados):
+
+       docker compose exec mlgroup php tests/smoke.php

@@ -1,0 +1,89 @@
+# ---------------------------------------------------------------------------
+# ml-group no Docker
+#
+#   docker compose build                       monta a imagem
+#   docker compose run --rm importar           traz storage/ desta maquina
+#   docker compose up -d                       sobe painel + laco de publicacao
+#   docker compose exec mlgroup php bin/mlgroup status
+#
+# Painel em http://127.0.0.1:8321
+# ---------------------------------------------------------------------------
+services:
+  mlgroup:
+    build:
+      context: .
+      args:
+        # o fuso entra na imagem: todo horario gravado no banco e comparado como
+        # texto, entao o container precisa pensar na mesma hora que voce
+        TZ: America/Sao_Paulo
+    image: mlgroup:local
+    container_name: mlgroup
+    restart: unless-stopped
+
+    # o painel edita configuracao e dispara envio, e nao pede senha: a porta
+    # fica presa ao 127.0.0.1 do host, sem aparecer na rede local
+    ports:
+      - "127.0.0.1:8321:8321"
+
+    environment:
+      TZ: America/Sao_Paulo
+      PAINEL_HOST: "0.0.0.0"
+      PAINEL_ORIGENS: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+      MLG_CHROME_BIN: /usr/bin/chromium
+      MLG_CHROME_ARGS: "--no-sandbox --disable-setuid-sandbox"
+
+    volumes:
+      # Editaveis daqui de fora, do jeito de sempre. O resto (src/, ponte/,
+      # bin/) vem da imagem - mexeu ali, "docker compose up -d --build".
+      - ./config:/app/config
+      - ./templates:/app/templates
+      - ./.env:/app/.env
+
+      # Banco, sessao do WhatsApp e logs ficam em volume do Docker, e nao numa
+      # pasta do Windows montada no container: o SQLite roda em modo WAL, que
+      # depende de trava e memoria compartilhada de verdade - coisa que a ponte
+      # de arquivos entre Windows e Linux nao entrega. Em pasta montada o banco
+      # trava ou volta "disk I/O error" no meio de um ciclo.
+      #
+      # Para trazer o storage que ja existe aqui:  docker compose run --rm importar
+      - mlgroup_storage:/app/storage
+
+    # o Chromium usa /dev/shm de verdade; os 64 MB padrao do Docker fazem a aba
+    # morrer no meio da renderizacao das listas grandes
+    shm_size: "1gb"
+
+    # sem isto cada pagina aberta deixa processo zumbi do navegador
+    init: true
+
+    # o laco termina o ciclo em andamento ao receber o sinal de parada
+    stop_grace_period: 60s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # Copia o storage/ desta maquina para dentro do volume: banco, sessao do
+  # WhatsApp, config-local.json e historico. Roda uma vez e sai.
+  #
+  #   docker compose run --rm importar
+  #
+  # A pasta de fora entra somente-leitura: no maximo isto sobrescreve o que ja
+  # estiver no volume, nunca o contrario.
+  # ---------------------------------------------------------------------------
+  importar:
+    build:
+      context: .
+      args:
+        TZ: America/Sao_Paulo
+    image: mlgroup:local
+    profiles: ["ferramentas"]
+    command: ["importar"]
+    volumes:
+      - mlgroup_storage:/app/storage
+      - ./storage:/importar:ro
+
+volumes:
+  mlgroup_storage:

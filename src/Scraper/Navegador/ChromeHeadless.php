@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MlGroup\Scraper\Navegador;
 
 use MlGroup\Support\Config;
+use MlGroup\Support\Env;
 use MlGroup\Support\Logger;
 use RuntimeException;
 
@@ -70,7 +71,9 @@ final class ChromeHeadless
             return $this->executavel;
         }
 
-        $configurado = Config::texto('config.navegador.executavel');
+        // MLG_CHROME_BIN vem do ambiente (e o que o container usa); a config
+        // continua valendo para quem instalou o navegador fora do padrao
+        $configurado = Env::texto('MLG_CHROME_BIN', Config::texto('config.navegador.executavel'));
 
         if ($configurado !== '' && is_file($configurado)) {
             return $this->executavel = $configurado;
@@ -516,6 +519,11 @@ final class ChromeHeadless
             array_splice($comando, -1, 0, ['--user-agent=' . $userAgent]);
         }
 
+        // a URL e sempre o ultimo item, entao o extra entra antes dela
+        foreach ($this->argumentosExtras() as $extra) {
+            array_splice($comando, -1, 0, [$extra]);
+        }
+
         $descritores = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
         $processo    = proc_open($comando, $descritores, $canos);
 
@@ -535,6 +543,42 @@ final class ChromeHeadless
         $this->esperarDevtools();
 
         Logger::i()->debug('Navegador pronto', ['porta' => $this->porta]);
+    }
+
+    /**
+     * Argumentos adicionais passados ao navegador.
+     *
+     * Existe por causa do container: o Chromium se recusa a subir como root com
+     * o sandbox ligado, e o sandbox depende de recursos que o Docker bloqueia
+     * por padrao - de onde vem o --no-sandbox do docker-compose.yml. Fora do
+     * container isto fica vazio e a linha de comando nao muda.
+     *
+     * MLG_CHROME_ARGS (separado por espaco) tem prioridade sobre
+     * config/config.php > navegador.argumentos_extras.
+     *
+     * @return string[]
+     */
+    private function argumentosExtras(): array
+    {
+        $doAmbiente = trim(Env::texto('MLG_CHROME_ARGS'));
+
+        $lista = $doAmbiente !== ''
+            ? (preg_split('/\s+/', $doAmbiente) ?: [])
+            : Config::lista('config.navegador.argumentos_extras');
+
+        $limpos = [];
+
+        foreach ($lista as $argumento) {
+            $argumento = trim((string) $argumento);
+
+            // so opcao: sem isto um valor perdido na config viraria uma URL
+            // extra e o navegador abriria a aba errada
+            if (str_starts_with($argumento, '--')) {
+                $limpos[] = $argumento;
+            }
+        }
+
+        return $limpos;
     }
 
     private function esperarDevtools(): void
@@ -622,13 +666,36 @@ final class ChromeHeadless
             mkdir($perfil, 0775, true);
         }
 
-        $comando = sprintf(
-            'powershell -NoProfile -NonInteractive -Command "Start-Process -FilePath \'%s\''
-            . ' -ArgumentList \'--user-data-dir=%s\',\'--no-first-run\',\'--no-default-browser-check\',\'%s\'"',
-            str_replace('/', '\\', $executavel),
-            str_replace('/', '\\', $perfil),
-            $url,
-        );
+        if (PHP_OS_FAMILY === 'Windows') {
+            $comando = sprintf(
+                'powershell -NoProfile -NonInteractive -Command "Start-Process -FilePath \'%s\''
+                . ' -ArgumentList \'--user-data-dir=%s\',\'--no-first-run\',\'--no-default-browser-check\',\'%s\'"',
+                str_replace('/', DIRECTORY_SEPARATOR, $executavel),
+                str_replace('/', DIRECTORY_SEPARATOR, $perfil),
+                $url,
+            );
+        } else {
+            /*
+             * Fora do Windows a janela so aparece se houver tela para desenha-la.
+             * No container nao ha: este login passa por reCAPTCHA e precisa de
+             * gente digitando, entao ele e feito na maquina de fora. Sem link
+             * oficial o sistema segue pelo modelo, que ao menos leva a tag.
+             */
+            if (getenv('DISPLAY') === false && getenv('WAYLAND_DISPLAY') === false) {
+                throw new RuntimeException(
+                    'Nao ha ambiente grafico para abrir a janela de login (DISPLAY vazio). '
+                    . 'O ml-login precisa ser feito fora do container; sem ele o link '
+                    . 'de afiliado sai pelo modelo, com a tag.'
+                );
+            }
+
+            $comando = sprintf(
+                'nohup %s --user-data-dir=%s --no-first-run --no-default-browser-check %s > /dev/null 2>&1 &',
+                escapeshellarg($executavel),
+                escapeshellarg($perfil),
+                escapeshellarg($url),
+            );
+        }
 
         $handle = popen($comando, 'r');
 

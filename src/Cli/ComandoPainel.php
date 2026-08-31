@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace MlGroup\Cli;
 
 use MlGroup\Support\Config;
+use MlGroup\Support\Env;
 
 /**
  * Sobe o painel web no servidor embutido do PHP.
@@ -22,6 +23,7 @@ final class ComandoPainel
     public function executar(int $porta, bool $abrirNavegador = true): int
     {
         $porta = $porta > 0 ? $porta : Config::inteiro('config.painel.porta', 8321);
+        $host  = $this->host();
 
         if ($this->ocupada($porta)) {
             $this->saida->linha('');
@@ -32,7 +34,9 @@ final class ComandoPainel
             return 1;
         }
 
-        $endereco = 'http://127.0.0.1:' . $porta;
+        // 0.0.0.0 e endereco de escuta, nao de visita: o link mostrado
+        // continua sendo o que o dono da maquina digita no navegador
+        $endereco = 'http://' . ($host === '0.0.0.0' ? '127.0.0.1' : $host) . ':' . $porta;
 
         $this->saida->linha('');
         $this->saida->titulo('  Painel do ml-group');
@@ -49,7 +53,7 @@ final class ComandoPainel
         // o servidor embutido assume o processo; nada roda depois disto
         $comando = [
             PHP_BINARY,
-            '-S', '127.0.0.1:' . $porta,
+            '-S', $host . ':' . $porta,
             '-t', MLG_ROOT . '/publico',
             MLG_ROOT . '/publico/index.php',
         ];
@@ -82,6 +86,20 @@ final class ComandoPainel
         }
 
         return proc_close($processo);
+    }
+
+    /**
+     * Endereco em que o servidor escuta.
+     *
+     * Fica em 127.0.0.1 fora do container - o painel edita configuracao e nao
+     * tem senha. Dentro do Docker ele precisa escutar em 0.0.0.0 para o
+     * mapeamento de porta chegar nele; quem entra e decidido pelo Support\Rede.
+     */
+    private function host(): string
+    {
+        $host = Env::texto('PAINEL_HOST', Config::texto('config.painel.host', '127.0.0.1'));
+
+        return trim($host) !== '' ? trim($host) : '127.0.0.1';
     }
 
     private function ocupada(int $porta): bool

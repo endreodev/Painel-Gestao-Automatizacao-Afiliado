@@ -86,6 +86,17 @@ return [
         // idade, em minutos, a partir da qual um perfil temporario largado por
         // uma execucao interrompida e apagado
         'perfil_vencido_min' => 60,
+
+        /*
+         | Argumentos extras na linha de comando do navegador.
+         |
+         | Fica vazio numa instalacao normal. Serve para o container: o Chromium
+         | se recusa a subir como root com o sandbox ligado, e o sandbox depende
+         | de recursos que o Docker bloqueia - por isso o docker-compose.yml
+         | passa MLG_CHROME_ARGS="--no-sandbox --disable-setuid-sandbox", que
+         | tem prioridade sobre o que estiver aqui.
+         */
+        'argumentos_extras' => [],
     ],
 
     /*
@@ -358,6 +369,25 @@ return [
      */
     'painel' => [
         'porta' => 8321,
+
+        /*
+         | Endereco de escuta. 127.0.0.1 = so esta maquina, que e o certo para
+         | quem roda direto no Windows. No container o painel precisa escutar em
+         | 0.0.0.0 para o mapeamento de porta do Docker alcanca-lo - la a
+         | variavel PAINEL_HOST cuida disso, sem mexer aqui.
+         */
+        'host' => '127.0.0.1',
+
+        /*
+         | Quem mais pode abrir o painel, alem de 127.0.0.1. IP exato ou faixa
+         | CIDR, separados por virgula. Existe porque, com o painel dentro do
+         | container, a requisicao chega pelo gateway do Docker (172.x) - sem
+         | isto o proprio dono da maquina levaria 403.
+         |
+         | Deixe vazio fora do Docker: o painel edita configuracao e dispara
+         | envio, e nao pede senha a ninguem.
+         */
+        'origens' => '',
     ],
 
     /*

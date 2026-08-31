@@ -1,0 +1,18 @@
+.git
+.gitignore
+.gitattributes
+
+# compiladas para Windows: a imagem instala as suas, para Linux
+ponte/node_modules
+
+# dados da instalacao. Entram pelo volume, nao pela imagem - assim a imagem nao
+# carrega banco nem sessao do WhatsApp
+storage
+
+# a imagem tem o seu proprio; o do host entra pelo volume
+.env
+
+Dockerfile
+.dockerignore
+docker-compose.yml
+*.zip
