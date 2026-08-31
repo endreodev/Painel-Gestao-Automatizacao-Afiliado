@@ -141,6 +141,17 @@ final class Campos
                 ],
             ],
 
+            'shopee' => [
+                'titulo'    => 'Shopee',
+                'descricao' => 'Segunda fonte de ofertas. As credenciais saem da Central de Afiliados da Shopee; sem elas, as buscas marcadas como Shopee são puladas e o ciclo roda só com o Mercado Livre.',
+                'campos'    => [
+                    ['chave' => 'SHOPEE_APP_ID', 'rotulo' => 'AppId', 'tipo' => 'texto', 'origem' => 'env'],
+                    ['chave' => 'SHOPEE_SECRET', 'rotulo' => 'Secret', 'tipo' => 'texto', 'origem' => 'env', 'ajuda' => 'Confira depois de salvar com: php bin/mlgroup shopee'],
+                    ['chave' => 'config.shopee.max_paginas', 'rotulo' => 'Páginas por busca', 'tipo' => 'inteiro', 'ajuda' => 'Cada página traz até 50 anúncios e custa uma chamada à API.'],
+                    ['chave' => 'config.shopee.intervalo_requisicao_ms', 'rotulo' => 'Intervalo entre chamadas (ms)', 'tipo' => 'inteiro'],
+                ],
+            ],
+
             'whatsapp' => [
                 'titulo'    => 'WhatsApp',
                 'descricao' => 'Para onde as ofertas vão.',

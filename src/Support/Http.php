@@ -37,11 +37,36 @@ final class Http
      */
     public function postJson(string $url, array $corpo, array $cabecalhos = []): RespostaHttp
     {
+        return $this->postJsonBruto($url, self::json($corpo), $cabecalhos);
+    }
+
+    /**
+     * POST de um JSON ja serializado.
+     *
+     * Existe para quem assina o corpo: a API de afiliados da Shopee calcula a
+     * assinatura sobre o texto exato que trafega. Reserializar aqui dentro
+     * arriscaria uma virgula ou uma barra a mais e a resposta seria
+     * "Invalid Signature", sem dizer por que.
+     *
+     * @param array<string,string> $cabecalhos
+     */
+    public function postJsonBruto(string $url, string $json, array $cabecalhos = []): RespostaHttp
+    {
         $cabecalhos['Content-Type'] = 'application/json';
 
+        return $this->requisitar('POST', $url, $json, $cabecalhos);
+    }
+
+    /**
+     * Serializa do jeito que o projeto inteiro serializa.
+     *
+     * @param array<string,mixed> $corpo
+     */
+    public static function json(array $corpo): string
+    {
         $json = json_encode($corpo, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-        return $this->requisitar('POST', $url, $json === false ? '{}' : $json, $cabecalhos);
+        return $json === false ? '{}' : $json;
     }
 
     /**

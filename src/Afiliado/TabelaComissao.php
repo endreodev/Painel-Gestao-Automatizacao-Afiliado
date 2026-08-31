@@ -67,12 +67,29 @@ final class TabelaComissao
         return round($ganho, 2);
     }
 
-    /** Aplica comissao e ganho no proprio produto. */
+    /**
+     * Aplica comissao e ganho no proprio produto.
+     *
+     * Comissao que ja veio da fonte fica como esta: a API de afiliados da
+     * Shopee informa o percentual real daquele anuncio, e trocar isso pela
+     * tabela mantida a mao seria substituir o numero certo por um palpite. O
+     * ganho em reais e recalculado de qualquer forma, porque o teto por venda
+     * vale para as duas lojas.
+     */
     public function aplicar(Produto $produto): Produto
     {
-        $produto->comissao      = $this->percentual($produto);
+        if (!$this->informadaPelaFonte($produto)) {
+            $produto->comissao = $this->percentual($produto);
+        }
+
         $produto->ganhoEstimado = $this->ganhoEstimado($produto, $produto->comissao);
 
         return $produto;
+    }
+
+    /** A loja de origem disse quanto paga? */
+    private function informadaPelaFonte(Produto $produto): bool
+    {
+        return $produto->loja === 'shopee' && $produto->comissao > 0;
     }
 }

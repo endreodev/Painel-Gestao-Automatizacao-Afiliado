@@ -1710,6 +1710,113 @@ Nicho::limparCache();
 
 /*
  |------------------------------------------------------------------
+ | Shopee: consulta, assinatura e conversao do anuncio
+ |------------------------------------------------------------------
+ | Sem rede: a API exige credenciais e nao seria honesto depender dela num
+ | autoteste. O que se verifica aqui e o que quebra calado - a consulta montada
+ | errada, a assinatura fora do formato e, principalmente, a conversao do
+ | anuncio: a Shopee manda o desconto em vez do preco cheio e a comissao ora em
+ | fracao, ora em percentual.
+ */
+echo "
+Shopee
+";
+
+$shopee = new MlGroup\Scraper\ColetorShopee();
+$espiao = new ReflectionClass($shopee);
+
+$chamarPrivado = static function (string $metodo, array $argumentos) use ($shopee, $espiao): mixed {
+    $alvo = $espiao->getMethod($metodo);
+    $alvo->setAccessible(true);
+
+    return $alvo->invokeArgs($shopee, $argumentos);
+};
+
+Env::definir('SHOPEE_APP_ID', '');
+Env::definir('SHOPEE_SECRET', '');
+
+verificar('sem credenciais o coletor se declara indisponivel', !$shopee->disponivel());
+verificar('e a busca volta vazia em vez de estourar',          $shopee->coletar(['termo' => 'x'], 10) === []);
+
+Env::definir('SHOPEE_APP_ID', '18300000000');
+Env::definir('SHOPEE_SECRET', 'segredo-de-teste');
+
+verificar('com credenciais fica disponivel', $shopee->disponivel());
+
+$consultaTermo = (string) $chamarPrivado('consultaProdutos', [['termo' => 'furadeira'], 2, 20]);
+
+verificar('a consulta leva o termo',        str_contains($consultaTermo, 'keyword: "furadeira"'));
+verificar('leva pagina e limite',           str_contains($consultaTermo, 'page: 2') && str_contains($consultaTermo, 'limit: 20'));
+verificar('pede os campos do productOffer', str_contains($consultaTermo, 'commissionRate') && str_contains($consultaTermo, 'offerLink'));
+
+$consultaOfertas = (string) $chamarPrivado('consultaProdutos', [['listType' => 2, 'matchId' => 77], 1, 50]);
+
+verificar('repassa listType e matchId',      str_contains($consultaOfertas, 'listType: 2') && str_contains($consultaOfertas, 'matchId: 77'));
+
+$consultaVazia = (string) $chamarPrivado('consultaProdutos', [[], 1, 50]);
+
+// sem termo e sem lista a API recusa a consulta: o padrao evita a busca morta
+verificar('busca sem criterio vira listType 0', str_contains($consultaVazia, 'listType: 0'));
+
+$anuncio = [
+    'itemId'            => '22222222',
+    'shopId'            => '111111',
+    'productName'       => 'Parafusadeira Furadeira 12V com Maleta e 2 Baterias',
+    'productLink'       => 'https://shopee.com.br/produto-i.111111.22222222',
+    'offerLink'         => 'https://s.shopee.com.br/rastreio-da-conta',
+    'imageUrl'          => 'https://cf.shopee.com.br/file/abc',
+    'priceMin'          => '149.90',
+    'priceDiscountRate' => 40,
+    'sales'             => 320,
+    'ratingStar'        => '4.8',
+    'commissionRate'    => '0.08',
+    'shopName'          => 'Ferramentas Store',
+];
+
+$daShopee = $chamarPrivado('montarProduto', [$anuncio]);
+
+verificar('o anuncio vira Produto',            $daShopee instanceof Produto);
+verificar('marcado como loja shopee',          $daShopee->loja === 'shopee');
+verificar('id leva prefixo e loja de origem',  $daShopee->mlId === 'SHP111111-22222222');
+verificar('preco vem do priceMin',             abs($daShopee->preco - 149.90) < 0.01);
+verificar('preco cheio remontado do desconto', abs($daShopee->precoOriginal - 249.83) < 0.05);
+verificar('o desconto bate com o informado',   abs($daShopee->desconto() - 40) < 0.5);
+verificar('comissao em fracao vira percentual', abs($daShopee->comissao - 8.0) < 0.01);
+verificar('o link ja vem rastreado da API',    $daShopee->linkAfiliado === 'https://s.shopee.com.br/rastreio-da-conta');
+verificar('a nota e as vendas atravessam',     $daShopee->avaliacao === 4.8 && $daShopee->vendidos === 320);
+
+$emPercentual = $chamarPrivado('montarProduto', [['commissionRate' => '12'] + $anuncio]);
+
+verificar('comissao ja em percentual fica como esta', abs($emPercentual->comissao - 12.0) < 0.01);
+
+$semDesconto = $chamarPrivado('montarProduto', [['priceDiscountRate' => 0] + $anuncio]);
+
+verificar('sem desconto nao inventa preco cheio', $semDesconto->precoOriginal === 0.0);
+
+// a tabela de comissoes do ML nao pode sobrescrever o numero real da Shopee
+(new TabelaComissao())->aplicar($daShopee);
+
+verificar('a tabela do ML nao mexe na comissao da Shopee', abs($daShopee->comissao - 8.0) < 0.01);
+verificar('mas o ganho em reais e calculado',              $daShopee->ganhoEstimado > 0);
+
+// nem o modelo de link do ML pode reescrever o link rastreado
+$linkFinal = (new MlGroup\Afiliado\LinkAfiliado())->gerar($daShopee);
+
+verificar('o link da Shopee sai intacto', $linkFinal === 'https://s.shopee.com.br/rastreio-da-conta');
+
+$assinatura = (string) $chamarPrivado('erroDe', [new MlGroup\Support\RespostaHttp(200, '{"error":10020,"message":"Invalid Signature"}')]);
+
+verificar('erro no corpo com HTTP 200 e reconhecido', str_contains($assinatura, 'Invalid Signature'));
+
+$vazia = $chamarPrivado('erroDe', [new MlGroup\Support\RespostaHttp(200, '{"data":{"productOfferV2":{"nodes":[]}}}')]);
+
+verificar('resposta boa nao vira erro', $vazia === null);
+
+Env::definir('SHOPEE_APP_ID', '');
+Env::definir('SHOPEE_SECRET', '');
+
+/*
+ |------------------------------------------------------------------
  | Limpeza dos dados de teste
  |------------------------------------------------------------------
  */

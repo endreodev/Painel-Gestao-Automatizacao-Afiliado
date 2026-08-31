@@ -1,8 +1,8 @@
 # ml-group
 
-Acha ofertas de **ferramentas** no Mercado Livre e publica sozinho no seu **grupo de
-WhatsApp**. Ele procura no site, calcula o desconto e a comissão de verdade, joga fora
-o que não presta e manda as melhores, no horário que você definir.
+Acha ofertas de **ferramentas** no Mercado Livre e na Shopee e publica sozinho no seu
+**grupo de WhatsApp**. Ele procura nas duas lojas, calcula o desconto e a comissão de
+verdade, joga fora o que não presta e manda as melhores, no horário que você definir.
 
 <img width="1894" height="949" alt="image" src="https://github.com/user-attachments/assets/96e69be4-7fcf-4cf4-b867-00efa35a5a8b" />
 
@@ -57,6 +57,7 @@ Todos os comandos começam com `docker compose exec mlgroup php bin/mlgroup`:
 | ver como a mensagem vai chegar | `... previa` |
 | trocar de grupo | `... grupos` |
 | ler o QR de novo | `... conectar` |
+| testar a Shopee | `... shopee` |
 
 E fora disso:
 
@@ -71,16 +72,40 @@ abra junto.
 
 ---
 
+## Ligar a Shopee (opcional)
+
+De fábrica ele procura só no Mercado Livre. A Shopee entra em três passos:
+
+1. Na **Central de Afiliados da Shopee**, peça acesso à **Open API** e gere as
+   credenciais (AppId e Secret). O acesso é liberado por eles, conta a conta — ter
+   conta de afiliado não basta.
+2. No painel, aba **Configuração → Shopee**, cole as duas e salve.
+3. Confira: `docker compose exec mlgroup php bin/mlgroup shopee`
+
+Se aparecer **"do not have access to the Shopee Affiliate Open API"** (erro 10035), as
+credenciais estão certas mas a conta ainda não foi liberada — é com o time de afiliados
+da Shopee, não tem ajuste no sistema que resolva.
+
+Depois, em [`config/buscas.php`](config/buscas.php), descomente os exemplos da Shopee
+no fim do arquivo (ou marque `'loja' => 'shopee'` em qualquer busca sua).
+
+As ofertas das duas lojas entram na mesma fila, passam pelos mesmos filtros e vão para
+o mesmo grupo. A vantagem da Shopee: ela informa a comissão real de cada anúncio e já
+devolve o link com o seu rastreio — não precisa de tabela de comissão nem de login.
+
+---
+
 ## Duas coisas para saber antes
 
 **1. Use um chip dedicado, nunca o seu pessoal.** Publicar em grupo exige uma conexão
 com o WhatsApp Web (a API oficial da Meta não envia para grupos, e isso não tem
 contorno). Automação nesse caminho pode levar ao bloqueio do número.
 
-**2. Confira a tabela de comissões.** O Mercado Livre não informa a comissão por API, e
-ela muda por categoria e campanha. O que o sistema usa está em
+**2. Confira a tabela de comissões do Mercado Livre.** Ele não informa a comissão por
+API, e ela muda por categoria e campanha. O que o sistema usa está em
 [`config/comissoes.php`](config/comissoes.php) — compare com a sua Central de Afiliados
-e corrija, senão ele erra junto na hora de escolher as ofertas.
+e corrija, senão ele erra junto na hora de escolher as ofertas. (Na Shopee isso não
+existe: a comissão vem pronta da API.)
 
 ---
 

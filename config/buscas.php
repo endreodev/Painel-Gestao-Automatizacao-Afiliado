@@ -21,6 +21,26 @@
  *
  * Coloque 'ativo' => false para desligar sem apagar.
  *
+ * LOJA
+ * ----
+ * Por padrao a busca vai ao Mercado Livre. Para procurar na Shopee, acrescente
+ * 'loja' => 'shopee' - e a unica diferenca. Ela usa a API oficial de afiliados
+ * (nada de navegador) e aceita:
+ *
+ *   'termo'     palavra-chave, igual as buscas do ML
+ *   'listType'  0 = tudo · 2 = mais vendidos · 3 e 4 = categoria · 5 = loja
+ *   'matchId'   o id da categoria (listType 3 e 4) ou da loja (listType 5)
+ *   'sortType'  codigo de ordenacao da Shopee (veja a documentacao deles)
+ *
+ * Sem 'termo' e sem 'listType', a busca vira listType 0 - o equivalente as
+ * ofertas do dia. Exige SHOPEE_APP_ID e SHOPEE_SECRET no .env; sem elas a
+ * busca e pulada e o ciclo segue com o Mercado Livre.
+ *
+ * O que chega da Shopee passa pelo mesmo nicho, pelos mesmos filtros e pela
+ * mesma pontuacao - so a fonte muda. Preco_min/preco_max e desconto_min NAO
+ * sao enviados a ela (a API nao aceita esses cortes): quem descarta e o filtro,
+ * depois.
+ *
  * As faixas de preco daqui acompanham o teto de config/config.php >
  * filtros.preco_maximo (hoje R$ 300). Pedir ao ML faixas mais largas so faz o
  * coletor trazer o que o filtro vai descartar depois.
@@ -201,5 +221,30 @@ return [
             'url'   => 'https://lista.mercadolivre.com.br/ferramentas/chave-de-impacto_Discount_30-100',
             'ativo' => false,
         ],
+
+        /*
+         |----------------------------------------------------------------------
+         | Shopee - descomente depois de por SHOPEE_APP_ID e SHOPEE_SECRET no
+         | .env e de conferir com:  php bin/mlgroup shopee
+         |
+         | Comece pelas duas de baixo e olhe o ranking (php bin/mlgroup analisar
+         | --verbose) antes de abrir mais: a Shopee tem muito item barato de
+         | catalogo generico, e quem separa o que presta e o perfil de nicho.
+         |----------------------------------------------------------------------
+         */
+        // [
+        //     'nome'  => 'Shopee - ofertas em destaque',
+        //     'loja'  => 'shopee',
+        //     'tipo'  => 'ofertas',
+        //     'listType' => 2,
+        //     'ativo' => true,
+        // ],
+        // [
+        //     'nome'  => 'Shopee - furadeira',
+        //     'loja'  => 'shopee',
+        //     'tipo'  => 'termo',
+        //     'termo' => 'furadeira',
+        //     'ativo' => true,
+        // ],
     ],
 ];

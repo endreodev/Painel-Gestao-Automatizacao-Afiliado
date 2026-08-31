@@ -121,6 +121,20 @@ final class Migracoes
         self::garantirColuna($pdo, 'produtos', 'prioridade', 'INTEGER NOT NULL DEFAULT 0');
 
         /*
+         | Bancos criados antes da Shopee.
+         |
+         | 'loja' separa a origem do produto: o link do Mercado Livre e montado
+         | por template na hora de publicar, o da Shopee ja vem pronto da API e
+         | nao pode ser remontado.
+         |
+         | 'link_afiliado' existe por causa disso: o produto que sai da fila e
+         | reconstruido do banco, e um link que so vivia em memoria se perdia no
+         | caminho - a oferta ia para o grupo sem rastreio.
+         */
+        self::garantirColuna($pdo, 'produtos', 'loja', "TEXT NOT NULL DEFAULT 'ml'");
+        self::garantirColuna($pdo, 'produtos', 'link_afiliado', "TEXT NOT NULL DEFAULT ''");
+
+        /*
          | O que o usuario mandou nao aparecer mais: um anuncio, uma marca ou um
          | vendedor. Por canal - a mesma marca pode incomodar num grupo e ser
          | irrelevante no outro.
@@ -216,6 +230,8 @@ final class Migracoes
                 pontuacao         REAL    NOT NULL DEFAULT 0,
                 prioridade        INTEGER NOT NULL DEFAULT 0,
                 origem            TEXT    NOT NULL DEFAULT 'api',
+                loja              TEXT    NOT NULL DEFAULT 'ml',
+                link_afiliado     TEXT    NOT NULL DEFAULT '',
                 criado_em         TEXT    NOT NULL,
                 atualizado_em     TEXT    NOT NULL,
                 UNIQUE (canal, ml_id)

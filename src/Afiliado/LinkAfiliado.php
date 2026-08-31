@@ -38,6 +38,16 @@ final class LinkAfiliado
             return '';
         }
 
+        /*
+         * Shopee: o link ja veio pronto da API, com o rastreio da sua conta
+         * dentro. Passar o modelo do Mercado Livre por cima acrescentaria
+         * parametros que a Shopee ignora e, pior, jogaria fora o unico
+         * identificador que credita a comissao.
+         */
+        if ($produto->loja === 'shopee') {
+            return $produto->linkAfiliado !== '' ? $produto->linkAfiliado : $permalink;
+        }
+
         if (Config::texto('config.afiliado.modo', 'modelo') === 'linkbuilder') {
             $oficial = $this->linkBuilder->gerar($permalink, $produto->mlId);
 

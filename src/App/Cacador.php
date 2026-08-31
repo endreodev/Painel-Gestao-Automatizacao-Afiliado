@@ -14,6 +14,7 @@ use MlGroup\Model\Produto;
 use MlGroup\Scraper\ColetorApi;
 use MlGroup\Scraper\ColetorInterface;
 use MlGroup\Scraper\ColetorNavegador;
+use MlGroup\Scraper\ColetorShopee;
 use MlGroup\Support\Config;
 use MlGroup\Support\Logger;
 use Throwable;
@@ -27,6 +28,9 @@ use Throwable;
 final class Cacador
 {
     private ?ColetorInterface $coletor = null;
+
+    /** Coletores ja instanciados, por loja. @var array<string,ColetorInterface> */
+    private array $porLoja = [];
 
     /** Quantidade bruta trazida da ultima caca, antes dos filtros. */
     private int $coletados = 0;
@@ -44,12 +48,15 @@ final class Cacador
      */
     public function cacar(): array
     {
-        $coletor = $this->coletor();
-
-        Logger::i()->info('Iniciando caca de ofertas', ['coletor' => $coletor->nome()]);
-
         $buscas   = Config::lista('buscas.buscas');
         $porBusca = Config::inteiro('config.coleta.itens_por_busca', 50);
+
+        /*
+         * Sem citar o coletor aqui de proposito: escolher o do Mercado Livre
+         * custa uma chamada de teste a API deles, e quem so tem busca da Shopee
+         * pagaria essa ida a toa. Cada busca ja registra a loja que usou.
+         */
+        Logger::i()->info('Iniciando caca de ofertas', ['buscas' => count($buscas)]);
 
         $this->coletados = 0;
 
@@ -61,7 +68,12 @@ final class Cacador
                 continue;
             }
 
-            $rotulo = (string) ($busca['nome'] ?? $busca['termo'] ?? 'busca');
+            $rotulo  = (string) ($busca['nome'] ?? $busca['termo'] ?? 'busca');
+            $coletor = $this->coletorDaBusca($busca);
+
+            if (!$coletor instanceof ColetorInterface) {
+                continue;
+            }
 
             try {
                 $itens = $coletor->coletar($busca, $porBusca);
@@ -98,6 +110,7 @@ final class Cacador
 
             Logger::i()->info('Busca concluida', [
                 'busca'     => $rotulo,
+                'loja'      => $coletor->nome(),
                 'itens'     => count($itens),
                 'aprovados' => count($doLote),
             ]);
@@ -195,8 +208,51 @@ final class Cacador
     }
 
     /**
-     * Escolhe o coletor. Se a config pedir 'auto', tenta a API e cai para o
-     * navegador quando ela exige autenticacao ou esta bloqueando.
+     * O coletor que atende esta busca.
+     *
+     * A loja vem da propria busca ('loja' => 'shopee'), e nao de uma opcao
+     * global: as duas lojas convivem no mesmo ciclo e no mesmo grupo, cada
+     * busca sabendo onde procurar. Sem a chave, e Mercado Livre - foi assim
+     * durante toda a vida do projeto e nenhuma busca antiga precisa mudar.
+     *
+     * Devolve null quando a loja existe mas nao pode operar agora (a Shopee sem
+     * credenciais, por exemplo): a busca e pulada e o ciclo segue com o resto.
+     *
+     * @param array<string,mixed> $busca
+     */
+    private function coletorDaBusca(array $busca): ?ColetorInterface
+    {
+        $loja = strtolower(trim((string) ($busca['loja'] ?? 'ml')));
+
+        if ($loja === '' || $loja === 'ml' || $loja === 'mercadolivre') {
+            return $this->coletor();
+        }
+
+        if ($loja !== 'shopee') {
+            Logger::i()->aviso('Busca com loja desconhecida', [
+                'busca' => (string) ($busca['nome'] ?? ''),
+                'loja'  => $loja,
+            ]);
+
+            return null;
+        }
+
+        $shopee = $this->porLoja['shopee'] ??= new ColetorShopee();
+
+        if (!$shopee->disponivel()) {
+            Logger::i()->aviso('Busca da Shopee pulada: SHOPEE_APP_ID/SHOPEE_SECRET ausentes', [
+                'busca' => (string) ($busca['nome'] ?? ''),
+            ]);
+
+            return null;
+        }
+
+        return $shopee;
+    }
+
+    /**
+     * Escolhe o coletor do Mercado Livre. Se a config pedir 'auto', tenta a API
+     * e cai para o navegador quando ela exige autenticacao ou esta bloqueando.
      */
     public function coletor(): ColetorInterface
     {
@@ -235,11 +291,11 @@ final class Cacador
             'INSERT INTO produtos (
                 canal, ml_id, assinatura, titulo, permalink, thumb, categoria_id, categoria_nome, marca, vendedor,
                 preco, preco_original, desconto, comissao, ganho_estimado, frete_gratis, full,
-                vendidos, avaliacao, total_avaliacoes, pontuacao, origem, criado_em, atualizado_em
+                vendidos, avaliacao, total_avaliacoes, pontuacao, origem, loja, link_afiliado, criado_em, atualizado_em
              ) VALUES (
                 :canal, :ml_id, :assinatura, :titulo, :permalink, :thumb, :categoria_id, :categoria_nome, :marca, :vendedor,
                 :preco, :preco_original, :desconto, :comissao, :ganho_estimado, :frete_gratis, :full,
-                :vendidos, :avaliacao, :total_avaliacoes, :pontuacao, :origem, :agora, :agora
+                :vendidos, :avaliacao, :total_avaliacoes, :pontuacao, :origem, :loja, :link_afiliado, :agora, :agora
              )
              ON CONFLICT(canal, ml_id) DO UPDATE SET
                 assinatura       = excluded.assinatura,
@@ -258,6 +314,8 @@ final class Cacador
                 total_avaliacoes = excluded.total_avaliacoes,
                 pontuacao        = excluded.pontuacao,
                 origem           = excluded.origem,
+                loja             = excluded.loja,
+                link_afiliado    = excluded.link_afiliado,
                 atualizado_em    = excluded.atualizado_em',
             $dados,
         );

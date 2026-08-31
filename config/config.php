@@ -101,6 +101,34 @@ return [
 
     /*
      |--------------------------------------------------------------------------
+     | Shopee - Programa de Afiliados
+     |--------------------------------------------------------------------------
+     | Segunda fonte de ofertas, ao lado do Mercado Livre. Uma busca escolhe a
+     | loja pela chave 'loja' => 'shopee' em config/buscas.php; sem a chave,
+     | continua sendo Mercado Livre.
+     |
+     | As credenciais NAO ficam aqui - vao no .env, em SHOPEE_APP_ID e
+     | SHOPEE_SECRET, tiradas da Central de Afiliados da Shopee. Sem elas as
+     | buscas da Shopee sao puladas e o ciclo segue com o resto.
+     |
+     | Duas diferencas em relacao ao ML, e as duas a favor: a comissao vem do
+     | proprio anuncio (nao da tabela de config/comissoes.php) e o link ja chega
+     | rastreado, sem precisar de login nem de navegador.
+     |
+     | O que a Shopee NAO manda: frete gratis, entrega FULL, marca e categoria.
+     | Ligar filtros.exigir_frete_gratis ou filtros.exigir_full descarta tudo
+     | que vier dela - do mesmo jeito que ja acontece com a pagina /ofertas.
+     */
+    'shopee' => [
+        // paginas por busca. Cada uma custa uma chamada; 3 x 50 = 150 itens.
+        'max_paginas'             => 3,
+
+        // espacamento entre as chamadas, para nao esbarrar no limite por minuto
+        'intervalo_requisicao_ms' => 400,
+    ],
+
+    /*
+     |--------------------------------------------------------------------------
      | Afiliado
      |--------------------------------------------------------------------------
      | 'modelo' aceita {url}, {url_encoded}, {tag} e {ferramenta}. Se o ML mudar

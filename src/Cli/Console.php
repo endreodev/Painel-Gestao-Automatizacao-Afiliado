@@ -65,6 +65,7 @@ final class Console
                 'link'       => $this->afiliado()->link($this->argumentos[0] ?? ''),
                 'afiliado'   => $this->afiliado()->situacao(),
                 'whatsapp'   => $this->testarWhatsapp(),
+                'shopee'     => $this->testarShopee(),
                 'grupos'     => $this->whatsapp()->escolherGrupo($this->argumentos[0] ?? ''),
                 'categorias' => $this->categorias(),
                 'relatorio'  => $this->relatorio(),
@@ -311,6 +312,43 @@ final class Console
         return 0;
     }
 
+    /**
+     * Confere as credenciais da Shopee contra a API de verdade.
+     *
+     * Faz uma consulta minima (um produto) porque o erro que aparece na pratica
+     * nao e "faltou o AppId" - e a assinatura recusada, que so a chamada real
+     * revela.
+     */
+    private function testarShopee(): int
+    {
+        $coletor  = new \MlGroup\Scraper\ColetorShopee();
+        $resposta = $coletor->testar();
+
+        $this->linha('');
+        $this->linha('  Shopee - Programa de Afiliados', '1');
+        $this->linha('');
+
+        if (!$resposta['ok']) {
+            $this->linha('  Status: NAO CONECTOU', '31');
+            $this->linha('  ' . $resposta['mensagem'], '90');
+            $this->linha('');
+            $this->linha('  Pegue AppId e Secret na Central de Afiliados da Shopee', '90');
+            $this->linha('  e coloque em SHOPEE_APP_ID e SHOPEE_SECRET no .env.', '90');
+            $this->linha('');
+
+            return 1;
+        }
+
+        $this->linha('  Status: conectado', '32');
+        $this->linha('  ' . $resposta['mensagem'], '90');
+        $this->linha('');
+        $this->linha('  Para usar, marque a loja como shopee numa busca de', '90');
+        $this->linha('  config/buscas.php (ha exemplos comentados no fim do arquivo).', '90');
+        $this->linha('');
+
+        return 0;
+    }
+
     private function testarWhatsapp(): int
     {
         $publicador = new Publicador();
@@ -522,6 +560,7 @@ final class Console
         $this->linha('    analisar     Mostra o ranking de ofertas sem enviar nada');
         $this->linha('    previa       Renderiza a mensagem da melhor oferta, para conferir o template');
         $this->linha('    whatsapp     Testa a conexao com o gateway');
+        $this->linha('    shopee       Testa as credenciais da API de afiliados da Shopee');
         $this->linha('    categorias   Lista as categorias do Mercado Livre (aceita filtro)');
         $this->linha('    afiliado     Mostra como o link de afiliado esta sendo montado');
         $this->linha('    link <url>   Gera o link de um produto pela tela oficial do ML');

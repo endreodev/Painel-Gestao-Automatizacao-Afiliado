@@ -39,6 +39,15 @@ final class Produto
         public readonly float $avaliacao = 0.0,
         public readonly int $totalAvaliacoes = 0,
         public readonly string $origem = 'api',
+        /*
+         | De qual loja o produto veio: 'ml' ou 'shopee'.
+         |
+         | Nao da para deduzir do id nem da origem sem combinar prefixo com
+         | texto, e quem decide o que fazer com o produto precisa saber a loja:
+         | o link de afiliado do ML e montado por template, o da Shopee ja vem
+         | pronto da API e nao pode ser reescrito.
+         */
+        public readonly string $loja = 'ml',
     ) {
     }
 
@@ -111,11 +120,13 @@ final class Produto
             avaliacao:       (float) ($linha['avaliacao'] ?? 0),
             totalAvaliacoes: (int) ($linha['total_avaliacoes'] ?? 0),
             origem:          (string) ($linha['origem'] ?? 'banco'),
+            loja:            (string) ($linha['loja'] ?? 'ml'),
         );
 
         $produto->comissao      = (float) ($linha['comissao'] ?? 0);
         $produto->ganhoEstimado = (float) ($linha['ganho_estimado'] ?? 0);
         $produto->pontuacao     = (float) ($linha['pontuacao'] ?? 0);
+        $produto->linkAfiliado  = (string) ($linha['link_afiliado'] ?? '');
 
         return $produto;
     }
@@ -145,6 +156,8 @@ final class Produto
             'total_avaliacoes' => $this->totalAvaliacoes,
             'pontuacao'        => $this->pontuacao,
             'origem'           => $this->origem,
+            'loja'             => $this->loja,
+            'link_afiliado'    => $this->linkAfiliado,
         ];
     }
 }

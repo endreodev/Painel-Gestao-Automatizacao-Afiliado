@@ -5,7 +5,7 @@ Tudo que o sistema faz e por quê. Para só colocar no ar, comece pelo
 
 ---
 
-Caçador de ofertas de **ferramentas** no Mercado Livre com publicação automática em
+Caçador de ofertas de **ferramentas** no Mercado Livre e na Shopee, com publicação automática em
 **grupo de WhatsApp** — mecânica, marcenaria, construção, jardinagem, elétrica,
 pintura, solda e medição. Busca pelo navegador, calcula desconto real e comissão de
 afiliado, ranqueia as ofertas e publica de tempos em tempos — tudo configurável.
@@ -291,6 +291,7 @@ php bin/mlgroup ciclo --analise   # uma rodada sem publicar
 php bin/mlgroup rodar             # laço contínuo no intervalo configurado
 php bin/mlgroup rodar --intervalo=90
 php bin/mlgroup whatsapp          # testa a conexão do gateway
+php bin/mlgroup shopee            # testa as credenciais da API da Shopee
 php bin/mlgroup relatorio --dias=30
 php bin/mlgroup limpar --dias=60  # remove dados antigos
 ```
@@ -422,6 +423,94 @@ vezes o link do mesmo anúncio. Se o Link Builder falhar, o sistema cai para o m
 Se a detecção automática dos campos da tela falhar, `php bin/mlgroup link <url>`
 imprime os campos e botões que encontrou — preencha `afiliado.seletor_campo` e
 `afiliado.seletor_botao` com base nisso.
+
+---
+
+## Shopee - Programa de Afiliados
+
+Segunda fonte de ofertas, ao lado do Mercado Livre. Não substitui nada: as duas lojas
+convivem no mesmo ciclo, na mesma fila e no mesmo grupo.
+
+**É a fonte mais simples que o projeto tem.** Não há navegador, raspagem, anti-bot nem
+login: a Shopee publica um endpoint GraphQL para afiliados e ele responde com o que no
+Mercado Livre precisa ser adivinhado — a **comissão real daquele anúncio** e o **link
+de afiliado já rastreado**.
+
+### Ligar
+
+1. Peça acesso à **Open API** na Central de Afiliados da Shopee e gere AppId e Secret.
+   **Ter conta de afiliado não basta** — o acesso à API é liberado por eles, conta a
+   conta. Sem a liberação, a chamada volta com o erro `10035`: *"You currently do not
+   have access to the Shopee Affiliate Open API Platform"*.
+2. Coloque em `SHOPEE_APP_ID` e `SHOPEE_SECRET` no `.env` — ou no painel, em
+   **Configuração → Shopee**.
+3. Confira: `php bin/mlgroup shopee`
+
+O comando faz uma consulta real de um item. Ele existe porque o erro que aparece na
+prática não é "faltou o AppId" — é a assinatura recusada, e só a chamada de verdade
+revela isso.
+
+### Buscar
+
+Uma busca escolhe a loja pela chave `loja`. Sem ela, é Mercado Livre — nenhuma busca
+antiga precisa mudar:
+
+```php
+// palavra-chave
+['nome' => 'Shopee - furadeira', 'loja' => 'shopee', 'termo' => 'furadeira'],
+
+// as ofertas em destaque da plataforma
+['nome' => 'Shopee - destaques', 'loja' => 'shopee', 'listType' => 2],
+```
+
+Os argumentos são os da própria Shopee, repassados como estão:
+
+| Campo | O que é |
+|---|---|
+| `termo` | palavra-chave (vira `keyword`) |
+| `listType` | `0` tudo · `2` mais vendidos · `3` e `4` categoria · `5` loja |
+| `matchId` | o id da categoria (`listType` 3 e 4) ou da loja (`listType` 5) |
+| `sortType` | código de ordenação da Shopee — veja a documentação deles |
+
+Sem `termo` e sem `listType`, a busca vira `listType: 0`, que é o equivalente às ofertas
+do dia. Sem credenciais, a busca é **pulada com aviso no log** e o ciclo segue com o
+Mercado Livre — nunca quebra o ciclo inteiro.
+
+### O que muda no caminho do produto
+
+| | Mercado Livre | Shopee |
+|---|---|---|
+| Comissão | tabela mantida à mão em `config/comissoes.php` | vem do próprio anúncio |
+| Link de afiliado | montado por modelo, ou pela tela oficial com login | já vem rastreado da API |
+| Frete grátis / FULL | informado | **não existe** |
+| Marca e categoria | quando a página traz | **não vêm** |
+| Preço "de" | anunciado | **remontado** a partir do % de desconto |
+
+Duas consequências práticas:
+
+- **Não ligue `filtros.exigir_frete_gratis` nem `filtros.exigir_full`** se quiser
+  ofertas da Shopee: sem esses campos, tudo que vier dela é descartado — a mesma
+  armadilha que já existe com a página `/ofertas` do ML e `avaliacoes_minimas`.
+- O preço cheio é reconstruído de `preço ÷ (1 − desconto)`, porque a Shopee manda a
+  taxa de desconto e não o valor original. Sem isso toda oferta dela chegaria com
+  desconto zero e o `desconto_minimo` cortaria todas.
+
+O resto do caminho é o mesmo: nicho, filtros, pontuação, diversidade, fila e não
+repetir valem igual para as duas lojas. O `ml_id` da Shopee é gravado como
+`SHP<loja>-<item>` para nunca esbarrar num id do Mercado Livre.
+
+### Onde isso mora no código
+
+```
+src/Scraper/ColetorShopee.php   coletor (GraphQL + assinatura + conversão)
+src/App/Cacador.php             escolhe o coletor por busca, pela chave 'loja'
+src/Model/Produto.php           campo 'loja', que decide como o link é tratado
+config/config.php > shopee      páginas por busca e intervalo entre chamadas
+```
+
+A assinatura é `SHA256(AppId + Timestamp + corpo + Secret)`, e o corpo assinado
+precisa ser **byte a byte** o que trafega — daí o `Http::postJsonBruto()`, que manda um
+JSON já serializado em vez de montar outro na saída.
 
 ---
 
@@ -585,13 +674,13 @@ Dois modos de envio em `config/config.php` → `envio.modo`:
 ```
 bin/mlgroup              CLI
 ponte/servidor.js        ponte local com o WhatsApp Web (Node + Baileys)
-config/                  config.php · buscas.php · comissoes.php
+config/                  config.php · buscas.php · comissoes.php · nicho.php
 templates/               textos das mensagens
 src/
   Support/               Env, Config, Logger, Http, Str, CertificadoRaiz
   Database/              conexão SQLite e migrações
   Model/Produto.php      produto normalizado
-  Scraper/               ColetorApi, ColetorNavegador
+  Scraper/               ColetorApi, ColetorNavegador, ColetorShopee
     Navegador/           ChromeHeadless (DevTools), WebSocket, ParserMercadoLivre
   Afiliado/              TabelaComissao, LinkAfiliado
   Analise/               Filtro, Pontuador, HistoricoPreco
@@ -619,5 +708,9 @@ storage/                 banco, logs, cache e sessao do WhatsApp (fora do git)
 | `Gateway de WhatsApp desconectado` | rode `php bin/mlgroup conectar` e leia o QR |
 | `Node.js 20+ nao encontrado` | instale em [nodejs.org](https://nodejs.org) — a ponte precisa dele |
 | `Dependencias da ponte ausentes` | `php bin/mlgroup instalar-ponte` |
+| `Invalid Signature` na Shopee | AppId ou Secret errados — confira com `php bin/mlgroup shopee` |
+| Shopee: erro `10035` | a conta ainda não tem acesso à Open API; peça a liberação ao time de afiliados |
+| `Busca da Shopee pulada` | faltam `SHOPEE_APP_ID`/`SHOPEE_SECRET` no `.env` |
+| Nada da Shopee é aprovado | `exigir_frete_gratis` ou `exigir_full` ligado — ela não manda esses campos |
 | A ponte não sobe | veja `storage/logs/ponte.log` |
 | QR expira antes de escanear | normal, ele se renova sozinho a cada ~20s |
