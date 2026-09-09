@@ -37,6 +37,24 @@ final class GerenciadorPonte
      * ser rapida e servir ao que existe para servir - dizer ao painel e ao
      * monitor como esta a conexao - sem bloquear o envio nem travar a tela.
      */
+    /**
+     * Segundos que a resposta de /status vale antes de perguntar de novo.
+     *
+     * Precisa ser MAIOR que a requisicao inteira, nao so que o timeout.
+     *
+     * Comecei com 5s: inutil, porque a consulta travada leva 8s e o cache ja
+     * nascia vencido. Subi para 30s e ainda faltou - a pagina faz outras coisas
+     * entre uma pergunta e outra, e quando a segunda chegava os 30s tinham
+     * passado. Cada processo do painel vive uma requisicao; 120s garante uma
+     * unica ida a ponte por pagina, que e o objetivo.
+     */
+    private const VALIDADE_STATUS = 120.0;
+
+    /** @var array{ok:bool,dados:array<string,mixed>} */
+    private static array $statusCache = ['ok' => false, 'dados' => []];
+
+    private static float $statusEm = 0.0;
+
     public function __construct(private readonly Http $http = new Http(timeout: 8, tentativas: 1))
     {
     }
@@ -54,7 +72,7 @@ final class GerenciadorPonte
     /** A ponte esta no ar? */
     public function noAr(): bool
     {
-        return $this->http->get($this->url() . '/status')->ok();
+        return $this->consultarStatus()['ok'];
     }
 
     /**
@@ -64,6 +82,9 @@ final class GerenciadorPonte
      */
     public function garantir(): void
     {
+        // o estado guardado nao vale mais depois de mexer no processo
+        self::esquecerStatus();
+
         if ($this->noAr()) {
             return;
         }
@@ -88,9 +109,51 @@ final class GerenciadorPonte
     /** @return array<string,mixed> */
     public function status(): array
     {
+        return $this->consultarStatus()['dados'];
+    }
+
+    /**
+     * Consulta /status uma vez a cada poucos segundos, e reaproveita.
+     *
+     * Uma pagina do painel pergunta o estado do WhatsApp varias vezes: o cartao
+     * de conexao, a faixa de diagnostico (que sozinha chama noAr() e depois
+     * conectado()), o nome do grupo de destino. Com a ponte saudavel isso passa
+     * despercebido - sao milissegundos. Com a ponte travada, cada pergunta custa
+     * o timeout inteiro, e quatro perguntas de 8s estouram o limite de 30s do
+     * servidor embutido: a pagina morre com "Maximum execution time exceeded".
+     *
+     * Reduzir o timeout so adiava o problema, porque o numero de perguntas e que
+     * cresce. Guardar a resposta por 5 segundos resolve na origem: dentro de uma
+     * renderizacao, o estado da conexao nao muda mesmo.
+     *
+     * @return array{ok:bool,dados:array<string,mixed>}
+     */
+    private function consultarStatus(): array
+    {
+        $agora = microtime(true);
+
+        if (self::$statusEm > 0.0 && ($agora - self::$statusEm) < self::VALIDADE_STATUS) {
+            return self::$statusCache;
+        }
+
+        // marca ANTES de perguntar: a janela conta do inicio da consulta, senao
+        // uma resposta que demorou 8s ja nasce com 8s de idade
+        self::$statusEm = $agora;
+
         $resposta = $this->http->get($this->url() . '/status');
 
-        return $resposta->ok() ? $resposta->json() : [];
+        self::$statusCache = [
+            'ok'    => $resposta->ok(),
+            'dados' => $resposta->ok() ? $resposta->json() : [],
+        ];
+
+        return self::$statusCache;
+    }
+
+    /** Descarta o cache - usado depois de parar ou subir a ponte. */
+    public static function esquecerStatus(): void
+    {
+        self::$statusEm = 0.0;
     }
 
     public function conectado(): bool
@@ -101,6 +164,9 @@ final class GerenciadorPonte
     /** Encerra o processo da ponte, mantendo a sessao salva. */
     public function parar(): void
     {
+        // o estado guardado nao vale mais depois de mexer no processo
+        self::esquecerStatus();
+
         if ($this->noAr()) {
             $this->http->postJson($this->url() . '/encerrar', []);
         }

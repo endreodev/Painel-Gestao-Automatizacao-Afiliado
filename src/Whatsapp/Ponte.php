@@ -20,6 +20,18 @@ final class Ponte implements WhatsappInterface
     public function __construct(
         private readonly GerenciadorPonte $gerenciador = new GerenciadorPonte(),
         private readonly Http $http = new Http(timeout: 45, tentativas: 2),
+
+        /*
+         * Cliente separado, curto, para consulta.
+         *
+         * O de 45s com 2 tentativas existe para o ENVIO - mandar imagem pelo
+         * WhatsApp e lento e vale esperar. Listar grupos usava o mesmo cliente,
+         * entao uma ponte travada segurava a pagina por ate 90s; o painel roda
+         * no servidor embutido, que corta em 30s, e a tela morria com "Maximum
+         * execution time exceeded". Consulta que trava tem de desistir rapido:
+         * o painel prefere mostrar a lista guardada em disco a nao abrir.
+         */
+        private readonly Http $consulta = new Http(timeout: 10, tentativas: 1),
     ) {
     }
 
@@ -79,7 +91,7 @@ final class Ponte implements WhatsappInterface
             return [];
         }
 
-        $resposta = $this->http->get($this->gerenciador->url() . '/grupos');
+        $resposta = $this->consulta->get($this->gerenciador->url() . '/grupos');
 
         if (!$resposta->ok()) {
             return [];

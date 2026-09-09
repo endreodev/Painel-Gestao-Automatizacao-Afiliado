@@ -22,6 +22,7 @@ use MlGroup\Support\Env;
 use MlGroup\Support\Str;
 use MlGroup\Whatsapp\CatalogoDeGrupos;
 use MlGroup\Whatsapp\Fabrica;
+use MlGroup\Whatsapp\GerenciadorPonte;
 use Throwable;
 
 /**
@@ -53,6 +54,7 @@ final class Painel
         return match ($rota) {
             '/canais'    => $this->canais(),
             '/grupos'    => $this->grupos(),
+            '/whatsapp'  => $this->whatsapp(),
             '/buscas'    => $this->buscas((string) ($consulta['alvo'] ?? '')),
             '/nicho'     => $this->nicho((string) ($consulta['alvo'] ?? '')),
             '/fila'      => $this->fila((string) ($consulta['canal'] ?? '')),
@@ -83,11 +85,18 @@ final class Painel
 
         $driver = Fabrica::criar();
 
-        try {
-            $conectado = $driver->conectado();
-        } catch (Throwable) {
-            $conectado = false;
-        }
+        /*
+         * Pergunta sem tentar consertar.
+         *
+         * Ponte::conectado() chama garantir(), que sobe o processo da ponte e
+         * espera - util no laco de publicacao, desastroso aqui: abrir o painel
+         * disparava uma tentativa de subir o WhatsApp e a pagina ficava 53
+         * segundos parada, acima do limite de 30s do servidor embutido, morrendo
+         * com "Maximum execution time exceeded".
+         *
+         * A tela so precisa relatar. Reconectar virou botao, em /whatsapp.
+         */
+        $conectado = $this->conectado();
 
         $grupos = array_filter(array_map('trim', explode(',', Env::texto('WHATSAPP_GRUPOS'))));
 
@@ -834,10 +843,11 @@ final class Painel
         return $usado ? $texto : '';
     }
 
+    /** Estado da conexao, sem efeito colateral: nao sobe nada. */
     private function conectado(): bool
     {
         try {
-            return Fabrica::criar()->conectado();
+            return (new GerenciadorPonte())->conectado();
         } catch (Throwable) {
             return false;
         }
@@ -880,6 +890,8 @@ final class Painel
                 'novo-canal'     => $this->novoCanal($post),
                 'remover-canal'  => $this->removerCanal($post),
                 'salvar-grupos'  => $this->salvarGrupos($post),
+                'wa-reconectar'  => $this->reconectarWhatsapp(),
+                'wa-sair'        => $this->sairWhatsapp(),
                 'furar', 'liberar' => $this->reordenarFila($post),
                 'descartar'      => $this->descartar($post),
                 'redescartar'    => $this->desfazerDescarte($post),
@@ -1491,6 +1503,101 @@ final class Painel
         ConfigLocal::definir('canais.canais', $canais);
         ConfigLocal::gravar();
         Config::recarregar();
+    }
+
+    /**
+     * Conexao do WhatsApp: estado, QR code e reconexao.
+     *
+     * Ate aqui reconectar so existia no terminal (php bin/mlgroup conectar).
+     * Quem opera o sistema pelo painel ficava sem saida quando a sessao caia -
+     * e a sessao cai: o WhatsApp derruba conexoes antigas sozinho.
+     */
+    private function whatsapp(): string
+    {
+        $gerenciador = new GerenciadorPonte();
+
+        try {
+            $noAr   = $gerenciador->noAr();
+            $status = $noAr ? $gerenciador->status() : [];
+        } catch (Throwable) {
+            $noAr   = false;
+            $status = [];
+        }
+
+        return $this->visao->whatsapp([
+            'no_ar'      => $noAr,
+            'conectado'  => (bool) ($status['conectado'] ?? false),
+            'numero'     => (string) ($status['numero'] ?? ''),
+            'qr'         => (string) ($status['qr_ascii'] ?? ''),
+            'ultimo_erro' => (string) ($status['erro'] ?? ''),
+        ], $this->recados);
+    }
+
+    /**
+     * Sobe a ponte e espera ela responder.
+     *
+     * Nao espera CONECTAR: com a sessao valida a conexao vem sozinha em
+     * segundos, e sem sessao valida o que aparece e o QR - que a tela precisa
+     * mostrar. Ficar esperando aqui so faria a pagina estourar o tempo limite.
+     */
+    private function reconectarWhatsapp(): void
+    {
+        $gerenciador = new GerenciadorPonte();
+
+        try {
+            $gerenciador->parar();
+            sleep(2);
+            $gerenciador->garantir();
+        } catch (Throwable $erro) {
+            $this->recados[] = ['tipo' => 'ruim', 'texto' => 'Não deu para subir a ponte: ' . $erro->getMessage()];
+
+            return;
+        }
+
+        for ($tentativa = 0; $tentativa < 8; $tentativa++) {
+            if ($gerenciador->conectado()) {
+                $this->recados[] = ['tipo' => 'ok', 'texto' => 'WhatsApp reconectado.'];
+
+                return;
+            }
+
+            GerenciadorPonte::esquecerStatus();
+            sleep(2);
+        }
+
+        $this->recados[] = [
+            'tipo'  => 'atencao',
+            'texto' => 'Ponte no ar, ainda conectando. Se aparecer um QR code abaixo, escaneie — '
+                . 'a sessão anterior expirou.',
+        ];
+    }
+
+    /**
+     * Encerra a sessao para forcar um QR novo.
+     *
+     * E o conserto para sessao que o WhatsApp passou a recusar - o caso em que
+     * a ponte conecta e cai em ciclo. Apaga so a credencial da conexao; canais,
+     * grupos, nicho, buscas e histórico ficam.
+     */
+    private function sairWhatsapp(): void
+    {
+        $gerenciador = new GerenciadorPonte();
+
+        try {
+            $gerenciador->sair();
+            sleep(1);
+            $gerenciador->garantir();
+        } catch (Throwable $erro) {
+            $this->recados[] = ['tipo' => 'ruim', 'texto' => 'Falha ao encerrar a sessão: ' . $erro->getMessage()];
+
+            return;
+        }
+
+        $this->recados[] = [
+            'tipo'  => 'ok',
+            'texto' => 'Sessão encerrada. O QR code aparece abaixo em alguns segundos — '
+                . 'recarregue a página se demorar.',
+        ];
     }
 
     private function salvarConfig(array $post): void

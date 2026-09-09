@@ -937,6 +937,66 @@ final class Visao
     }
 
     /**
+     * Conexao do WhatsApp: estado, QR code e os dois botoes de conserto.
+     *
+     * @param array<string,mixed>             $estado
+     * @param array<int,array<string,string>> $recados
+     */
+    public function whatsapp(array $estado, array $recados): string
+    {
+        $conectado = (bool) $estado['conectado'];
+        $noAr      = (bool) $estado['no_ar'];
+        $qr        = trim((string) $estado['qr']);
+        $erro      = trim((string) $estado['ultimo_erro']);
+
+        $selo = match (true) {
+            $conectado => $this->selo('Conectado', true),
+            $noAr      => $this->selo('Ponte no ar, sem conexão', false),
+            default    => $this->selo('Ponte fora do ar', false),
+        };
+
+        $numero = (string) $estado['numero'];
+
+        $html = '<section class="cartao">'
+            . $this->cabecalhoCartao('WhatsApp', $numero !== '' ? 'número ' . $numero : '')
+            . '<p class="descricao">O sistema publica pelo WhatsApp Web, por uma ponte que roda nesta '
+            . 'máquina. Quando a sessão cai, é aqui que se resolve — sem terminal.</p>'
+            . '<div class="linha-estado">' . $selo
+            . ($erro !== '' ? '<span class="auxiliar">último erro: ' . $this->e($erro) . '</span>' : '')
+            . '</div>';
+
+        if ($qr !== '') {
+            /*
+             * O QR vem pronto da ponte, em ASCII. Desenhar um QR de verdade
+             * exigiria uma biblioteca; o ASCII e escaneavel pelo celular desde
+             * que a fonte seja monoespacada e as linhas nao quebrem - e o que a
+             * classe qr-code garante.
+             */
+            $html .= '<div class="qr-aviso">Escaneie no celular: <strong>WhatsApp &rsaquo; Aparelhos '
+                . 'conectados &rsaquo; Conectar um aparelho</strong></div>'
+                . '<pre class="qr-code">' . $this->e($qr) . '</pre>'
+                . '<p class="dica">O código se renova sozinho a cada ~20 segundos. '
+                . 'Recarregue a página para pegar o mais novo.</p>';
+        }
+
+        $html .= '<div class="barra-acoes">'
+            . '<form method="post"><input type="hidden" name="acao" value="wa-reconectar">'
+            . '<button type="submit" class="botao primario">Reconectar</button></form>'
+            . '<form method="post" onsubmit="return confirm('
+            . '\'Encerrar a sessão e pedir um QR novo? Canais, grupos e histórico não são afetados.\');">'
+            . '<input type="hidden" name="acao" value="wa-sair">'
+            . '<button type="submit" class="botao perigo">Encerrar sessão e ler QR</button></form>'
+            . '</div>'
+            . '<p class="dica"><strong>Reconectar</strong> derruba e sobe a ponte — resolve travamento '
+            . 'e queda passageira, mantendo a sessão. <strong>Encerrar sessão</strong> apaga a credencial '
+            . 'e pede QR novo — é o conserto para quando a ponte conecta e cai em ciclo, sinal de que o '
+            . 'WhatsApp passou a recusar a sessão antiga.</p>'
+            . '</section>';
+
+        return $this->layout('WhatsApp', '/whatsapp', $html, $recados);
+    }
+
+    /**
      * A lista do que foi descartado, com o desfazer.
      *
      * Sem esta tela o descarte seria uma porta de mao unica: um clique errado
@@ -1272,6 +1332,7 @@ final class Visao
             'Ajustar' => [
                 '/canais'   => ['Canais', 'M4 6h16M4 12h16M4 18h16M8 3v3M16 3v3'],
                 '/nicho'    => ['Nicho', 'M12 2 4 6v6c0 5 3.4 9.1 8 10 4.6-.9 8-5 8-10V6z'],
+                '/whatsapp' => ['WhatsApp', 'M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.4 8.4 0 0 1 8.4-9 8.4 8.4 0 0 1 8.6 9z'],
                 '/grupos'   => ['Grupos', 'M17 20v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 20v-2a4 4 0 0 0-3-3.9M16 2.1a4 4 0 0 1 0 7.8'],
                 '/buscas'   => ['Buscas', 'M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16zM21 21l-4.35-4.35'],
                 '/config'   => ['Configuração', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 15H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 7a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 9 3.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'],
@@ -2189,6 +2250,17 @@ final class Visao
         .furar.remover:hover { border-color: var(--critico); color: var(--critico); }
 
         .campos.travados { opacity: .72; pointer-events: none; }
+
+        /* ---------- conexao do WhatsApp ---------- */
+        .linha-estado { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 16px; }
+        .qr-aviso { font-size: 13px; color: var(--tinta-2); margin: 6px 0 10px; }
+        .qr-code {
+            display: inline-block; margin: 0 0 6px; padding: 14px 16px; border-radius: 10px;
+            background: #fff; color: #000; border: 1px solid var(--borda);
+            font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+            font-size: 9px; line-height: 9px; letter-spacing: 0; white-space: pre; overflow-x: auto;
+        }
+        .barra-acoes form { display: inline; }
 
         @media (max-width: 960px) { .grade.principal, .grade.secundaria { grid-template-columns: 1fr; } }
         @media (max-width: 760px) {
