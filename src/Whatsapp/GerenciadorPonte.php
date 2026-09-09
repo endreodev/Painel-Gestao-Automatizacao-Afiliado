@@ -23,15 +23,21 @@ final class GerenciadorPonte
     private const NODE_MINIMO = 20;
 
     /*
-     * 30s, e nao 10s.
+     * 8s: este e o timeout da CHECAGEM de status, nao do envio.
      *
-     * Este e o timeout da CHECAGEM de status - o envio em si ja tolera 45s. Com
-     * 10s, uma ponte lenta (sessao com falha de decodificacao consome o event
-     * loop e a resposta chega em 15s) era declarada "fora do ar" e o Publicador
-     * desistia antes de tentar. O envio teria funcionado; quem impedia era a
-     * pergunta que antecede o envio.
+     * Ja esteve em 10s e eu subi para 30s, para uma ponte lenta nao ser
+     * declarada "fora do ar". Resolveu o falso negativo e criou outro problema:
+     * o servidor embutido do painel corta a requisicao em 30s, entao a pagina
+     * inicial - que pergunta o estado do WhatsApp - passou a morrer com
+     * "Maximum execution time of 30 seconds exceeded".
+     *
+     * A saida nao era escolher um numero no meio. Era parar de tratar esta
+     * pergunta como se fosse decisiva: quem publica agora tenta enviar mesmo
+     * quando a checagem falha (ver Publicador::publicar). Assim a checagem pode
+     * ser rapida e servir ao que existe para servir - dizer ao painel e ao
+     * monitor como esta a conexao - sem bloquear o envio nem travar a tela.
      */
-    public function __construct(private readonly Http $http = new Http(timeout: 30, tentativas: 1))
+    public function __construct(private readonly Http $http = new Http(timeout: 8, tentativas: 1))
     {
     }
 

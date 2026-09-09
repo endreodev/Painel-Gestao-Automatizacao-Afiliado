@@ -56,10 +56,23 @@ final class Publicador
             return 0;
         }
 
+        /*
+         * A checagem avisa, mas nao decide.
+         *
+         * Antes ela abortava a publicacao. O problema: "conectado?" tem um
+         * timeout curto e "enviar" tolera 45s - entao uma ponte lenta reprovava
+         * na pergunta e o envio, que teria funcionado, nunca era tentado. Com a
+         * ponte oscilando, isso significou fila cheia e grupo em silencio.
+         *
+         * Agora a resposta negativa vira aviso e o envio e tentado assim mesmo.
+         * Se a ponte estiver de fato fora do ar, o envio falha logo em seguida e
+         * o erro aparece com o motivo real, em vez de um diagnostico de segunda
+         * mao feito por uma pergunta que expirou.
+         */
         if (!$this->whatsapp->conectado()) {
-            Logger::i()->erro('Gateway de WhatsApp desconectado', ['driver' => $this->whatsapp->nome()]);
-
-            return 0;
+            Logger::i()->aviso('WhatsApp nao respondeu a checagem; tentando enviar assim mesmo', [
+                'driver' => $this->whatsapp->nome(),
+            ]);
         }
 
         $selecionados = array_slice($produtos, 0, Config::inteiro('config.envio.max_por_execucao', 5));
