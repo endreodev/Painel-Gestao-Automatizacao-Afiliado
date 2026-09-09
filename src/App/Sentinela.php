@@ -121,7 +121,202 @@ final class Sentinela
                 : 'FALHA ao reiniciar o laço de publicação';
         }
 
+        /*
+         * A ponte tambem precisa ser religada.
+         *
+         * Ate aqui o monitor sabia dizer "WhatsApp PARADO" e nao fazia nada a
+         * respeito - so o laco era religado. O laco entao rodava perfeitamente,
+         * coletava, escolhia a oferta, e falhava no envio; 87 horas se passaram
+         * assim, com o monitor rodando de cinco em cinco minutos e relatando o
+         * problema a um log que ninguem lia.
+         */
+        if (!$estado['ponte']['ativo']) {
+            $acoes[] = $this->religarPonte()
+                ? 'ponte do WhatsApp reiniciada'
+                : 'FALHA ao reiniciar a ponte do WhatsApp';
+        }
+
         return $acoes;
+    }
+
+    /**
+     * Derruba e sobe a ponte do WhatsApp.
+     *
+     * Para antes de subir mesmo quando ela parece viva: o caso que motivou isto
+     * nao foi uma ponte morta, foi uma degradada - o processo respondia, mas em
+     * 16 segundos, acima do tempo limite de 10 do cliente HTTP. Para quem
+     * consulta, "lento demais" e indistinguivel de "fora do ar", e subir por
+     * cima de um processo desses deixaria o problema de pe.
+     *
+     * A sessao fica em disco, entao reconectar nao pede QR de novo.
+     */
+    private function religarPonte(): bool
+    {
+        $gerenciador = new \MlGroup\Whatsapp\GerenciadorPonte();
+
+        try {
+            $gerenciador->parar();
+            sleep(3);
+            $gerenciador->garantir();
+        } catch (\Throwable $erro) {
+            Logger::i()->erro('Nao foi possivel religar a ponte', ['motivo' => $erro->getMessage()]);
+
+            return false;
+        }
+
+        // reconectar leva alguns segundos; sem esta espera o monitor daria falha
+        for ($tentativa = 0; $tentativa < 30; $tentativa++) {
+            if ($gerenciador->conectado()) {
+                return true;
+            }
+
+            sleep(2);
+        }
+
+        return false;
+    }
+
+
+    /**
+     * Um caminho de log que aceite escrita agora.
+     *
+     * O lancador redireciona a saida com ">>". Se o arquivo estiver travado, o
+     * cmd aborta ANTES de rodar o php - e o laco nunca sobe. Nao e hipotese:
+     * uma coleta interrompida deixou 210 processos do Chrome vivos, herdeiros do
+     * descritor de rodar.log, e o arquivo ficou preso por dez dias. O monitor
+     * tentou religar a cada cinco minutos, falhou todas as vezes e o sistema
+     * ficou parado sem que nada no log dissesse o motivo.
+     *
+     * Perder uma linha de log e menos grave do que nao publicar.
+     */
+    private function logGravavel(): string
+    {
+        $padrao = MLG_ROOT . '/storage/logs/rodar.log';
+        $teste  = @fopen($padrao, 'a');
+
+        if ($teste !== false) {
+            fclose($teste);
+
+            return $padrao;
+        }
+
+        $alternativo = MLG_ROOT . '/storage/logs/rodar-' . date('Ymd-His') . '.log';
+
+        Logger::i()->aviso('rodar.log travado por outro processo, usando arquivo novo', [
+            'arquivo' => basename($alternativo),
+        ]);
+
+        return $alternativo;
+    }
+
+    /**
+     * Encerra navegadores que sobraram de coletas interrompidas.
+     *
+     * O coletor fecha o Chrome ao terminar, mas um laco que morre no meio (a
+     * maquina dorme, o processo e morto) nao chega a fazer isso. Cada sobra
+     * dessas mantem processos vivos, come memoria e - pior - segura descritores
+     * herdados do laco morto, incluindo o do proprio log.
+     *
+     * So mata o que aponta para o perfil temporario deste projeto. O navegador
+     * do usuario nao tem esse caminho na linha de comando e nao e tocado.
+     */
+    private function encerrarNavegadoresOrfaos(): void
+    {
+        if (DIRECTORY_SEPARATOR !== '\\') {
+            return;
+        }
+
+        // se o laco esta vivo, o Chrome aberto pode ser dele - nao mexer
+        if ($this->lerPulso(self::LACO) !== null && $this->estadoLaco()['ativo']) {
+            return;
+        }
+
+        /*
+         * O PowerShell vai para um arquivo, e nao para a linha de comando.
+         *
+         * A consulta precisa de aspas simples e duplas aninhadas; montada dentro
+         * de uma string PHP que ainda passa pelo cmd, ela chega deformada e o
+         * PowerShell ecoa o texto em vez de executar. Num arquivo, cada nivel de
+         * aspas fica onde deveria.
+         */
+        $script = MLG_ROOT . '/storage/cache/limpar-navegadores.ps1';
+        $marca  = str_replace('/', '\\', MLG_ROOT);
+
+        $conteudo = implode("\r\n", [
+            '# Gerado pelo monitor. Encerra Chrome que sobrou de coleta interrompida.',
+            '$alvo = Get-CimInstance Win32_Process -Filter "Name=\'chrome.exe\'" -ErrorAction SilentlyContinue |',
+            '  Where-Object { $_.CommandLine -like "*' . $marca . '*" }',
+            'foreach ($p in $alvo) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }',
+            '$alvo.Count',
+            '',
+        ]);
+
+        if (@file_put_contents($script, $conteudo) === false) {
+            return;
+        }
+
+        @exec(
+            'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '
+            . escapeshellarg(str_replace('/', '\\', $script)) . ' 2>&1',
+            $saida,
+            $codigo,
+        );
+
+        $quantos = (int) trim((string) end($saida));
+
+        if ($codigo === 0 && $quantos > 0) {
+            Logger::i()->aviso('Navegadores orfaos encerrados antes de religar o laco', [
+                'processos' => $quantos,
+            ]);
+        }
+
+        $this->apagarPerfisOrfaos();
+    }
+
+    /**
+     * Remove os perfis temporarios que o Chrome deixou para tras.
+     *
+     * O coletor apaga o proprio perfil ao fechar; quem morre antes disso nao
+     * apaga. Em dez dias juntaram 28 pastas e 914 MB - o disco enche em silencio
+     * e ninguem relaciona com o robo de ofertas.
+     *
+     * Roda logo depois de encerrar os navegadores, entao nenhuma pasta aqui
+     * ainda esta em uso.
+     */
+    private function apagarPerfisOrfaos(): void
+    {
+        $apagadas = 0;
+
+        foreach (glob(MLG_ROOT . '/storage/cache/chrome-*', GLOB_ONLYDIR) ?: [] as $pasta) {
+            if ($this->apagarPasta($pasta)) {
+                $apagadas++;
+            }
+        }
+
+        if ($apagadas > 0) {
+            Logger::i()->info('Perfis de navegador orfaos apagados', ['pastas' => $apagadas]);
+        }
+    }
+
+    private function apagarPasta(string $pasta): bool
+    {
+        $itens = scandir($pasta);
+
+        if ($itens === false) {
+            return false;
+        }
+
+        foreach ($itens as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+
+            $caminho = $pasta . '/' . $item;
+
+            is_dir($caminho) ? $this->apagarPasta($caminho) : @unlink($caminho);
+        }
+
+        return @rmdir($pasta);
     }
 
     /** @return array{nome:string,ativo:bool,detalhe:string} */
@@ -255,7 +450,9 @@ final class Sentinela
 
     private function iniciarLaco(): bool
     {
-        $log = MLG_ROOT . '/storage/logs/rodar.log';
+        $this->encerrarNavegadoresOrfaos();
+
+        $log = $this->logGravavel();
 
         if (DIRECTORY_SEPARATOR === '\\') {
             $lancador = MLG_ROOT . '/storage/cache/iniciar-laco.cmd';

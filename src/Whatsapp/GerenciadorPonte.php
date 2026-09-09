@@ -22,7 +22,16 @@ final class GerenciadorPonte
     /** O Baileys exige Node 20 ou superior. */
     private const NODE_MINIMO = 20;
 
-    public function __construct(private readonly Http $http = new Http(timeout: 10, tentativas: 1))
+    /*
+     * 30s, e nao 10s.
+     *
+     * Este e o timeout da CHECAGEM de status - o envio em si ja tolera 45s. Com
+     * 10s, uma ponte lenta (sessao com falha de decodificacao consome o event
+     * loop e a resposta chega em 15s) era declarada "fora do ar" e o Publicador
+     * desistia antes de tentar. O envio teria funcionado; quem impedia era a
+     * pergunta que antecede o envio.
+     */
+    public function __construct(private readonly Http $http = new Http(timeout: 30, tentativas: 1))
     {
     }
 

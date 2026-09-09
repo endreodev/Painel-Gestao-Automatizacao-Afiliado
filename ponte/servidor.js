@@ -30,6 +30,62 @@ const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PASTA_SESSAO = join(RAIZ, 'storage', 'whatsapp-sessao');
 const PORTA = Number(process.env.MLG_PONTE_PORTA || 8787);
 
+/*
+ * Engole a enxurrada de "Bad MAC" do libsignal.
+ *
+ * Quando a sessao perde a chave de alguma conversa, o libsignal tenta decifrar,
+ * falha e escreve o erro com pilha inteira direto no console.error - a cada
+ * mensagem, para sempre. Nao passa pelo logger do Baileys, entao silenciar
+ * aquele nao adianta.
+ *
+ * O estrago nao e cosmetico: em quatro dias isso gerou 761 mil linhas e um log
+ * de 440 MB, e a escrita sincrona no arquivo consumiu o event loop a ponto de a
+ * ponte responder em 16 segundos - acima do limite de 10 do lado PHP, que
+ * passou a considerar o WhatsApp fora do ar. O sistema ficou 87 horas sem
+ * publicar por causa de uma mensagem de log.
+ *
+ * Aqui o padrao e contado e resumido de tempos em tempos. Qualquer outro erro
+ * continua saindo inteiro.
+ */
+let badMacContados = 0;
+
+const erroOriginal = console.error.bind(console);
+
+console.error = (...args) => {
+    const texto = args.map((a) => (a && a.stack) ? a.stack : String(a)).join(' ');
+
+    /*
+     * Sao varias mensagens para a mesma doenca - chave de sessao perdida. Cada
+     * versao do libsignal fala de um jeito, entao a lista pega a familia toda.
+     */
+    const ruidoDeSessao = [
+        'Bad MAC',
+        'Failed to decrypt message',
+        'Session error',
+        'No session found',
+        'No matching sessions found',
+    ];
+
+    if (ruidoDeSessao.some((p) => texto.includes(p))) {
+        badMacContados++;
+
+        return;
+    }
+
+    erroOriginal(...args);
+};
+
+setInterval(() => {
+    if (badMacContados > 0) {
+        erroOriginal(
+            new Date().toISOString()
+            + ' [ponte] ' + badMacContados + ' falhas de decodificacao (Bad MAC) na ultima hora.'
+            + ' Se o numero nao cair, a sessao precisa ser refeita: php bin/mlgroup conectar',
+        );
+        badMacContados = 0;
+    }
+}, 3600000).unref();
+
 /** Baileys espera um logger no formato do pino; este apenas engole tudo. */
 const silencioso = {
     level: 'silent',
