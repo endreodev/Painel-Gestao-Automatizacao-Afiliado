@@ -99,6 +99,7 @@ final class Sentinela
             'laco'   => $this->estadoLaco(),
             'ponte'  => $this->estadoPonte(),
             'coleta' => $this->estadoColeta(),
+            'painel' => $this->estadoPainel(),
         ];
     }
 
@@ -136,7 +137,119 @@ final class Sentinela
                 : 'FALHA ao reiniciar a ponte do WhatsApp';
         }
 
+        /*
+         * O painel tambem.
+         *
+         * Ele roda em primeiro plano e morre quando o terminal fecha ou a
+         * maquina reinicia - diferente do laco, que o monitor ja reerguia. O
+         * motor seguia publicando e a interface ficava fora do ar sem ninguem
+         * notar; em tres ocasioes o sistema pareceu parado quando so faltava o
+         * painel.
+         */
+        if (!$estado['painel']['ativo']) {
+            $acoes[] = $this->iniciarPainel()
+                ? 'painel reiniciado'
+                : 'FALHA ao reiniciar o painel';
+        }
+
         return $acoes;
+    }
+
+    /** @return array{nome:string,ativo:bool,detalhe:string} */
+    private function estadoPainel(): array
+    {
+        $porta = Config::inteiro('config.painel.porta', 8321);
+
+        /*
+         * Pergunta ao socket, nao por HTTP.
+         *
+         * Uma pagina do painel pode demorar segundos (ela consulta o WhatsApp),
+         * e o monitor nao pode ficar preso nisso. Abrir a porta responde a unica
+         * pergunta que importa aqui: ha alguem atendendo?
+         */
+        $conexao = @fsockopen('127.0.0.1', $porta, $erro, $mensagem, 2);
+
+        if ($conexao === false) {
+            return [
+                'nome'    => 'Painel',
+                'ativo'   => false,
+                'detalhe' => 'fora do ar (porta ' . $porta . ')',
+            ];
+        }
+
+        fclose($conexao);
+
+        return [
+            'nome'    => 'Painel',
+            'ativo'   => true,
+            'detalhe' => 'http://127.0.0.1:' . $porta,
+        ];
+    }
+
+    /**
+     * Sobe o painel em segundo plano.
+     *
+     * Mesmo desenho do laco: um .cmd com o comando e o Start-Process para o
+     * processo sobreviver ao monitor. E o log passa pelo logGravavel(), pelo
+     * mesmo motivo de la - arquivo travado nao pode impedir o processo de subir.
+     */
+    private function iniciarPainel(): bool
+    {
+        $porta = Config::inteiro('config.painel.porta', 8321);
+        $log   = $this->logGravavel('painel');
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $lancador = MLG_ROOT . '/storage/cache/iniciar-painel.cmd';
+
+            file_put_contents($lancador, implode("\r\n", [
+                '@echo off',
+                sprintf(
+                    '"%s" "%s" painel --sem-navegador --porta=%d >> "%s" 2>&1',
+                    str_replace('/', '\\', PHP_BINARY),
+                    str_replace('/', '\\', MLG_ROOT . '/bin/mlgroup'),
+                    $porta,
+                    str_replace('/', '\\', $log),
+                ),
+                '',
+            ]));
+
+            $comando = sprintf(
+                'powershell -NoProfile -NonInteractive -Command "Start-Process -FilePath \'cmd.exe\''
+                . ' -ArgumentList \'/c\',\'%s\' -WindowStyle Hidden"',
+                str_replace('/', '\\', $lancador),
+            );
+        } else {
+            $comando = sprintf(
+                'nohup %s %s painel --sem-navegador --porta=%d >> %s 2>&1 &',
+                escapeshellarg(PHP_BINARY),
+                escapeshellarg(MLG_ROOT . '/bin/mlgroup'),
+                $porta,
+                escapeshellarg($log),
+            );
+        }
+
+        $handle = popen($comando, 'r');
+
+        if ($handle === false) {
+            return false;
+        }
+
+        pclose($handle);
+
+        // o servidor embutido leva um instante para abrir a porta
+        for ($tentativa = 0; $tentativa < 15; $tentativa++) {
+            sleep(1);
+
+            $conexao = @fsockopen('127.0.0.1', $porta, $erro, $mensagem, 1);
+
+            if ($conexao !== false) {
+                fclose($conexao);
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -189,9 +302,9 @@ final class Sentinela
      *
      * Perder uma linha de log e menos grave do que nao publicar.
      */
-    private function logGravavel(): string
+    private function logGravavel(string $nome = 'rodar'): string
     {
-        $padrao = MLG_ROOT . '/storage/logs/rodar.log';
+        $padrao = MLG_ROOT . '/storage/logs/' . $nome . '.log';
         $teste  = @fopen($padrao, 'a');
 
         if ($teste !== false) {
@@ -200,7 +313,7 @@ final class Sentinela
             return $padrao;
         }
 
-        $alternativo = MLG_ROOT . '/storage/logs/rodar-' . date('Ymd-His') . '.log';
+        $alternativo = MLG_ROOT . '/storage/logs/' . $nome . '-' . date('Ymd-His') . '.log';
 
         Logger::i()->aviso('rodar.log travado por outro processo, usando arquivo novo', [
             'arquivo' => basename($alternativo),

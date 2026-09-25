@@ -49,7 +49,19 @@ final class ChromeHeadless
      * afiliados exige estar logado no Mercado Livre, e o login so vale a pena
      * fazer uma vez - por isso ele aponta para uma pasta fixa.
      */
-    public function __construct(private readonly ?string $perfilFixo = null)
+    /**
+     * @param bool $comJanela Sobe o Chrome sem --headless.
+     *
+     * Existe para a Shopee. Ela recusa o headless mesmo com o disfarce que
+     * basta ao Mercado Livre: a sessao e reconhecida (is_login true) e ainda
+     * assim a resposta vem com erro 90309999. Com janela de verdade o Chrome
+     * para de se entregar - e a janela nasce fora da area visivel, para nao
+     * piscar na tela do usuario a cada coleta.
+     */
+    public function __construct(
+        private readonly ?string $perfilFixo = null,
+        private readonly bool $comJanela = false,
+    )
     {
     }
 
@@ -494,7 +506,9 @@ final class ChromeHeadless
 
         $comando = [
             $executavel,
-            '--headless=new',
+            ...($this->comJanela
+                ? ['--window-position=-2400,-2400', '--start-minimized']
+                : ['--headless=new']),
             '--disable-gpu',
             '--no-first-run',
             '--no-default-browser-check',

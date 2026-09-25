@@ -20,6 +20,7 @@ use MlGroup\Analise\Descartes;
 use MlGroup\Analise\Diversidade;
 use MlGroup\Analise\Filtro;
 use MlGroup\Analise\Nicho;
+use MlGroup\App\BuscaDireta;
 use MlGroup\App\Cacador;
 use MlGroup\App\TarefaAgendada;
 use MlGroup\App\DestinosDeGrupo;
@@ -110,6 +111,7 @@ $idsDeTeste = [
     'MLB9999002221', 'MLB9999002222', 'MLB9999002223',
     'MLB9999002224', 'MLB9999002225', 'MLB9999002226', 'MLB9999002227',
     'MLB9999002228',
+    'MLB9999003001', 'MLB9999003002', 'MLB9999003003',
 ];
 
 $limparFixtures = static function (array $ids): void {
@@ -1814,6 +1816,151 @@ verificar('resposta boa nao vira erro', $vazia === null);
 
 Env::definir('SHOPEE_APP_ID', '');
 Env::definir('SHOPEE_SECRET', '');
+
+/*
+ |------------------------------------------------------------------
+ | Enviar agora: busca manual fora da fila
+ |------------------------------------------------------------------
+ | Serve para pedido pontual - alguem no grupo pede uma lavadora a bateria e
+ | esperar o rodizio nao faz sentido. Procura no que ja foi coletado, porque o
+ | ML bloqueia busca por termo ao vivo.
+ */
+echo "\nEnviar agora\n";
+
+ConfigLocal::definir('canais.canais', [
+    ['id' => 'busca_reta', 'nome' => 'Busca reta', 'grupos' => ['777777777777777777@g.us'], 'ativo' => true],
+]);
+ConfigLocal::gravar();
+Config::recarregar();
+Nicho::limparCache();
+
+$canalBusca = Canal::porId('busca_reta');
+
+$fixturas = [
+    ['MLB9999003001', 'Lavadora De Alta Pressão Portátil 2 Baterias Recarregável', 119.90, 299.00],
+    ['MLB9999003002', 'Lavadora de Alta Pressão Elétrica 1600W Com Fio', 349.00, 700.00],
+    ['MLB9999003003', 'Parafusadeira Furadeira Impacto 21v Duas Baterias', 189.00, 420.00],
+];
+
+/*
+ | Inseridas direto, sem passar pelo Cacador.
+ |
+ | O assunto aqui e a busca, nao a coleta. Passando pelo avaliar(), a fixture
+ | ficava sujeita a nicho, desconto minimo e comissao - e o teste quebrava por
+ | motivo nenhum a ver com procurar por descricao. Foi o que aconteceu: as tres
+ | foram reprovadas na entrada e todas as verificacoes falharam de uma vez.
+ */
+foreach ($fixturas as [$id, $titulo, $preco, $de]) {
+    $agora = date('Y-m-d H:i:s');
+
+    MlGroup\Database\Db::executar(
+        'INSERT OR REPLACE INTO produtos
+            (canal, ml_id, assinatura, titulo, permalink, thumb, preco, preco_original,
+             desconto, comissao, ganho_estimado, pontuacao, origem, criado_em, atualizado_em)
+         VALUES (:canal, :ml_id, :assinatura, :titulo, :permalink, :thumb, :preco, :preco_original,
+                 :desconto, :comissao, :ganho, :pontuacao, :origem, :criado, :atualizado)',
+        [
+            'canal'          => 'busca_reta',
+            'ml_id'          => $id,
+            'assinatura'     => $id,
+            'titulo'         => $titulo,
+            'permalink'      => 'https://produto.mercadolivre.com.br/' . $id,
+            'thumb'          => '',
+            'preco'          => $preco,
+            'preco_original' => $de,
+            'desconto'       => round((1 - $preco / $de) * 100, 2),
+            'comissao'       => 4.0,
+            'ganho'          => round($preco * 0.04, 2),
+            'pontuacao'      => 70.0,
+            'origem'         => 'teste',
+            'criado'         => $agora,
+            'atualizado'     => $agora,
+        ],
+    );
+}
+
+$procurar = static fn (string $q, float $min = 0.0, float $max = 0.0): array => Canal::comCanal(
+    $canalBusca,
+    static fn (): array => (new BuscaDireta())->procurar($q, $min, $max),
+);
+
+$ids = static fn (array $r): array => array_map(static fn (array $x): string => $x['produto']->mlId, $r);
+
+// ---- casamento por palavra, em qualquer ordem ----
+verificar('acha pela descricao',              in_array('MLB9999003001', $ids($procurar('lavadora bateria')), true));
+verificar('a ordem das palavras nao importa',  in_array('MLB9999003001', $ids($procurar('bateria lavadora')), true));
+
+/*
+ | O caso que me pegou ao escrever: eu tirava acento so do que era digitado e
+ | comparava com o titulo cru no banco, entao "pressao" nunca encontrava
+ | "Pressão" - a busca voltava quase vazia e parecia que nao havia produtos.
+ */
+verificar('sem acento acha com acento',        in_array('MLB9999003001', $ids($procurar('alta pressao')), true));
+verificar('com acento tambem acha',            in_array('MLB9999003001', $ids($procurar('alta pressão')), true));
+
+// singular acha plural: quem digita "bateria" espera achar "2 Baterias"
+verificar('singular acha o plural',            in_array('MLB9999003001', $ids($procurar('bateria')), true));
+
+// todas as palavras precisam aparecer, senao a busca traz o mundo
+verificar('exige todas as palavras',          !in_array('MLB9999003002', $ids($procurar('lavadora bateria')), true));
+verificar('mas acha a que tem todas',          in_array('MLB9999003002', $ids($procurar('lavadora fio')), true));
+
+// ---- faixa de preco ----
+verificar('respeita o teto',                  !in_array('MLB9999003002', $ids($procurar('lavadora', 0, 150)), true));
+verificar('respeita o piso',                  !in_array('MLB9999003001', $ids($procurar('lavadora', 200)), true));
+verificar('a faixa combina com a descricao',   $ids($procurar('lavadora', 0, 150)) === ['MLB9999003001']);
+
+// ---- entrada vazia nao pode virar "traga tudo" ----
+verificar('descricao vazia nao busca',         $procurar('') === []);
+verificar('so espacos nao busca',              $procurar('   ') === []);
+verificar('letra solta e ignorada',            $procurar('a') === []);
+
+// ---- marca o que ja saiu, sem esconder ----
+$antesDoEnvio = $procurar('lavadora bateria');
+
+verificar('antes de publicar, nao marcado',   !$antesDoEnvio[0]['ja_enviado']);
+
+Canal::comCanal($canalBusca, static fn (): int => (new \MlGroup\App\Publicador(new Simulado()))->publicar(
+    [$antesDoEnvio[0]['produto']],
+));
+
+$depoisDoEnvio = $procurar('lavadora bateria');
+
+verificar('depois de publicar, aparece marcado', $depoisDoEnvio[0]['ja_enviado']);
+verificar('e continua na lista',                 in_array('MLB9999003001', $ids($depoisDoEnvio), true));
+verificar('com a data do envio',                 $depoisDoEnvio[0]['quando'] !== null);
+
+// ---- envio direto ----
+$envio = Canal::comCanal($canalBusca, static fn (): array => (new BuscaDireta())->enviar(
+    'MLB9999003003',
+    new \MlGroup\App\Publicador(new Simulado()),
+));
+
+verificar('envia o produto escolhido',           $envio['ok'] && $envio['produto']->mlId === 'MLB9999003003');
+
+// id de outro canal nao pode ser publicado por engano
+$intruso = Canal::comCanal($canalBusca, static fn (): array => (new BuscaDireta())->enviar(
+    'MLB0000000000',
+    new \MlGroup\App\Publicador(new Simulado()),
+));
+
+verificar('produto inexistente nao envia',      !$intruso['ok'] && $intruso['produto'] === null);
+
+// ---- a tela ----
+$telaEnvio = (new Painel())->responder('/enviar', 'GET', [], ['q' => 'lavadora bateria', 'canal' => 'busca_reta']);
+
+verificar('a tela responde',                     str_contains($telaEnvio, 'Enviar agora'));
+verificar('traz o campo de descricao',           str_contains($telaEnvio, 'name="q"'));
+verificar('e o botao de enviar por linha',       str_contains($telaEnvio, 'name="enviar-agora"'));
+
+$semBusca = (new Painel())->responder('/enviar', 'GET', [], []);
+
+verificar('sem busca nao lista nada',           !str_contains($semBusca, 'name="enviar-agora"'));
+
+ConfigLocal::definir('canais.canais', []);
+ConfigLocal::gravar();
+Config::recarregar();
+Nicho::limparCache();
 
 /*
  |------------------------------------------------------------------

@@ -120,6 +120,18 @@ return [
      | que vier dela - do mesmo jeito que ja acontece com a pagina /ofertas.
      */
     'shopee' => [
+        /*
+         | Coletar da Shopee pelo navegador, com a conta logada.
+         |
+         | Desligado porque nao funciona hoje: medido com sessao valida, a
+         | Shopee devolve is_login=true e error=90309999 ao mesmo tempo, e a
+         | busca renderiza zero produtos. Vale em headless e em janela real.
+         |
+         | Ligue so para testar de novo se eles mudarem de politica. O caminho
+         | que funciona e a API (SHOPEE_APP_ID / SHOPEE_SECRET).
+         */
+        'usar_navegador' => false,
+
         // paginas por busca. Cada uma custa uma chamada; 3 x 50 = 150 itens.
         'max_paginas'             => 3,
 

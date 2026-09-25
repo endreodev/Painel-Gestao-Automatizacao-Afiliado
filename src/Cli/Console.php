@@ -8,6 +8,7 @@ use MlGroup\App\Agendador;
 use MlGroup\App\Cacador;
 use MlGroup\App\Ciclo;
 use MlGroup\App\TarefaAgendada;
+use MlGroup\Scraper\ColetorShopeeNavegador;
 use MlGroup\App\Publicador;
 use MlGroup\Database\Db;
 use MlGroup\Mensagem\Montador;
@@ -62,6 +63,8 @@ final class Console
                 'desconectar' => $this->whatsapp()->desconectar(),
                 'instalar-ponte' => $this->whatsapp()->instalar(),
                 'ml-login'   => $this->afiliado()->login(),
+                'shopee-login' => $this->shopeeLogin(),
+                'shopee'     => $this->shopeeSituacao(),
                 'link'       => $this->afiliado()->link($this->argumentos[0] ?? ''),
                 'afiliado'   => $this->afiliado()->situacao(),
                 'whatsapp'   => $this->testarWhatsapp(),
@@ -176,6 +179,91 @@ final class Console
         $this->linha('');
 
         return 0;
+    }
+
+    /**
+     * Abre o navegador para o usuario entrar na Shopee.
+     *
+     * A Shopee nao entrega nada sem sessao - nem a busca, nem o endpoint que o
+     * proprio site usa. Como a API de afiliados exige credenciais que so saem
+     * para conta aprovada, o caminho para conta nova e este: logar uma vez num
+     * perfil de Chrome que fica guardado, igual ao Link Builder do ML.
+     */
+    private function shopeeLogin(): int
+    {
+        $coletor = new ColetorShopeeNavegador();
+
+        $this->linha('');
+        $this->linha('  Entrar na Shopee', '1');
+        $this->linha('');
+        $this->linha('  Vou abrir uma janela do navegador. Nela:', '90');
+        $this->linha('');
+        $this->linha('    1. Entre na sua conta da Shopee');
+        $this->linha('    2. Espere a pagina inicial carregar');
+        $this->linha('    3. Feche a janela');
+        $this->linha('');
+
+        $coletor->abrirLogin();
+
+        $this->linha('  Perfil: ' . $coletor->perfil(), '90');
+        $this->linha('');
+
+        if (!$this->saida->interativo()) {
+            $this->linha('  Depois de fechar a janela, confira com: php bin/mlgroup shopee', '90');
+            $this->linha('');
+
+            return 0;
+        }
+
+        $this->saida->escrever('  Terminou o login e fechou a janela? Aperte Enter para eu conferir... ');
+        fgets(STDIN);
+
+        $this->linha('');
+        $this->linha('  Conferindo a sessao...', '90');
+
+        $teste = $coletor->testar();
+
+        $this->linha('  ' . $teste['detalhe'], $teste['ok'] ? '32' : '31');
+        $this->linha('');
+
+        if (!$teste['ok']) {
+            return 1;
+        }
+
+        $this->linha('  Pronto. Agora as buscas com "loja" => "shopee" ja coletam.', '90');
+        $this->linha('');
+
+        return 0;
+    }
+
+    /** Mostra se a Shopee esta pronta para coletar, e por qual via. */
+    private function shopeeSituacao(): int
+    {
+        $this->linha('');
+        $this->linha('  Shopee', '1');
+        $this->linha('');
+
+        $api = new \MlGroup\Scraper\ColetorShopee();
+
+        if ($api->disponivel()) {
+            $teste = $api->testar();
+            $this->linha('  API de afiliados: ' . ($teste['ok'] ? 'ok' : 'com problema'), $teste['ok'] ? '32' : '33');
+            $this->linha('    ' . ($teste['detalhe'] ?? ''), '90');
+        } else {
+            $this->linha('  API de afiliados: sem credenciais (SHOPEE_APP_ID/SHOPEE_SECRET)', '90');
+            $this->linha('    So saem para conta ja aprovada no programa de afiliados.', '90');
+        }
+
+        $this->linha('');
+
+        $navegador = new ColetorShopeeNavegador();
+        $teste     = $navegador->testar();
+
+        $this->linha('  Navegador: ' . ($teste['ok'] ? 'pronto' : 'nao configurado'), $teste['ok'] ? '32' : '33');
+        $this->linha('    ' . $teste['detalhe'], '90');
+        $this->linha('');
+
+        return $teste['ok'] || $api->disponivel() ? 0 : 1;
     }
 
     private function monitor(): int

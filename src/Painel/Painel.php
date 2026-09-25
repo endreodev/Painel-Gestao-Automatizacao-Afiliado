@@ -9,6 +9,7 @@ use MlGroup\Analise\Diversidade;
 use MlGroup\Analise\Filtro;
 use MlGroup\Analise\Nicho;
 use MlGroup\App\Agendador;
+use MlGroup\App\BuscaDireta;
 use MlGroup\App\Canal;
 use MlGroup\App\DestinosDeGrupo;
 use MlGroup\App\Fila;
@@ -55,6 +56,7 @@ final class Painel
             '/canais'    => $this->canais(),
             '/grupos'    => $this->grupos(),
             '/whatsapp'  => $this->whatsapp(),
+            '/enviar'    => $this->enviarAgora($consulta),
             '/buscas'    => $this->buscas((string) ($consulta['alvo'] ?? '')),
             '/nicho'     => $this->nicho((string) ($consulta['alvo'] ?? '')),
             '/fila'      => $this->fila((string) ($consulta['canal'] ?? '')),
@@ -890,6 +892,8 @@ final class Painel
                 'novo-canal'     => $this->novoCanal($post),
                 'remover-canal'  => $this->removerCanal($post),
                 'salvar-grupos'  => $this->salvarGrupos($post),
+                'buscar-envio'   => null,
+                'enviar-agora'   => $this->publicarAgora($post),
                 'wa-reconectar'  => $this->reconectarWhatsapp(),
                 'wa-sair'        => $this->sairWhatsapp(),
                 'furar', 'liberar' => $this->reordenarFila($post),
@@ -1597,6 +1601,91 @@ final class Painel
             'tipo'  => 'ok',
             'texto' => 'Sessão encerrada. O QR code aparece abaixo em alguns segundos — '
                 . 'recarregue a página se demorar.',
+        ];
+    }
+
+    /**
+     * Busca manual para publicar na hora, sem passar pela fila.
+     *
+     * @param array<string,mixed> $consulta
+     */
+    private function enviarAgora(array $consulta): string
+    {
+        $descricao = trim((string) ($consulta['q'] ?? ''));
+        $minimo    = (float) ($consulta['min'] ?? 0);
+        $maximo    = (float) ($consulta['max'] ?? 0);
+        $canalId   = trim((string) ($consulta['canal'] ?? ''));
+
+        $canal = $canalId !== '' ? Canal::porId($canalId) : (Canal::ativos()[0] ?? null);
+
+        if ($canal === null) {
+            $this->recados[] = ['tipo' => 'atencao', 'texto' => 'Nenhum canal ativo para publicar.'];
+
+            return $this->visao->enviarAgora([], [], '', $descricao, $minimo, $maximo, $this->recados);
+        }
+
+        $achados = $descricao === ''
+            ? []
+            : Canal::comCanal(
+                $canal,
+                static fn (): array => (new BuscaDireta())->procurar($descricao, $minimo, $maximo),
+            );
+
+        if ($descricao !== '' && $achados === []) {
+            $this->recados[] = [
+                'tipo'  => 'atencao',
+                'texto' => 'Nada encontrado para "' . $descricao . '" nesta faixa. '
+                    . 'A busca cobre o que já foi coletado — tente outras palavras ou amplie o preço.',
+            ];
+        }
+
+        $canais = [];
+
+        foreach (Canal::ativos() as $ativo) {
+            $canais[$ativo->id()] = $ativo->nome();
+        }
+
+        return $this->visao->enviarAgora(
+            $achados,
+            $canais,
+            $canal->id(),
+            $descricao,
+            $minimo,
+            $maximo,
+            $this->recados,
+        );
+    }
+
+    /** Publica o produto escolhido direto no grupo do canal. */
+    private function publicarAgora(array $post): void
+    {
+        [$canalId, $mlId] = array_pad(explode('|', trim((string) ($post['enviar-agora'] ?? '')), 2), 2, '');
+
+        $canal = Canal::porId($canalId);
+
+        if ($canal === null || $mlId === '') {
+            $this->recados[] = ['tipo' => 'atencao', 'texto' => 'Produto ou canal inválido.'];
+
+            return;
+        }
+
+        $resultado = Canal::comCanal($canal, static fn (): array => (new BuscaDireta())->enviar(
+            $mlId,
+            new \MlGroup\App\Publicador(Fabrica::criar()),
+        ));
+
+        if (!$resultado['ok']) {
+            $this->recados[] = ['tipo' => 'ruim', 'texto' => $resultado['motivo']];
+
+            return;
+        }
+
+        $produto = $resultado['produto'];
+
+        $this->recados[] = [
+            'tipo'  => 'ok',
+            'texto' => 'Publicado em "' . $canal->nome() . '": '
+                . Str::limitar($produto->titulo, 60) . ' — ' . Str::dinheiro($produto->preco),
         ];
     }
 

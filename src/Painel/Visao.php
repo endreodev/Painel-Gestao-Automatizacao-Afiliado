@@ -937,6 +937,92 @@ final class Visao
     }
 
     /**
+     * Busca manual para publicar na hora.
+     *
+     * @param array<int,array{produto:Produto,ja_enviado:bool,quando:?string}> $achados
+     * @param array<string,string>                                             $canais
+     * @param array<int,array<string,string>>                                  $recados
+     */
+    public function enviarAgora(
+        array $achados,
+        array $canais,
+        string $canalId,
+        string $descricao,
+        float $minimo,
+        float $maximo,
+        array $recados,
+    ): string {
+        $corpo = '';
+
+        foreach ($achados as $achado) {
+            $produto = $achado['produto'];
+            $jaSaiu  = (bool) $achado['ja_enviado'];
+
+            $corpo .= '<tr' . ($jaSaiu ? ' class="ja-enviado"' : '') . '>'
+                . '<td><div class="com-foto">'
+                . $this->miniatura($produto->thumb, $produto->titulo)
+                . '<a href="' . $this->e($produto->link()) . '" target="_blank" rel="noreferrer">'
+                . $this->e(Str::limitar($produto->titulo, 58)) . '</a>'
+                . '</div>'
+                . ($jaSaiu
+                    ? '<div class="grupo-aviso">Já publicado em '
+                        . $this->e(date('d/m \à\s H:i', (int) strtotime((string) $achado['quando'])))
+                        . ' — enviar de novo repete a oferta no grupo.</div>'
+                    : '')
+                . '</td>'
+                . '<td class="num">' . $this->e(Str::dinheiro($produto->preco)) . '</td>'
+                . '<td class="num riscado">' . ($produto->precoOriginal > 0
+                    ? $this->e(Str::dinheiro($produto->precoOriginal)) : '—') . '</td>'
+                . '<td class="num">' . $this->e(Str::percentual($produto->desconto())) . '</td>'
+                . '<td class="num">' . $this->e(Str::dinheiro($produto->ganhoEstimado)) . '</td>'
+                . '<td><button type="submit" name="enviar-agora" value="'
+                . $this->e($canalId . '|' . $produto->mlId) . '" class="botao '
+                . ($jaSaiu ? 'fantasma' : 'primario') . '">'
+                . ($jaSaiu ? 'Enviar de novo' : 'Enviar') . '</button></td>'
+                . '</tr>';
+        }
+
+        $destino = $this->selecao('canal', $canais, $canalId, 'canal-envio');
+
+        $html = '<section class="cartao">'
+            . $this->cabecalhoCartao('Enviar agora', 'sem passar pela fila')
+            . '<p class="descricao">Procure pelo que você quer publicar e mande na hora. '
+            . 'Serve para pedido de alguém do grupo ou oferta que não pode esperar o rodízio.</p>'
+            . '<form method="get" class="busca-envio">'
+            . '<label>Descrição<input type="text" name="q" value="' . $this->e($descricao)
+            . '" placeholder="lavadora alta pressão bateria" autofocus></label>'
+            . '<label>De R$<input type="number" name="min" step="1" min="0" value="'
+            . ($minimo > 0 ? (int) $minimo : '') . '" placeholder="0" class="curto"></label>'
+            . '<label>Até R$<input type="number" name="max" step="1" min="0" value="'
+            . ($maximo > 0 ? (int) $maximo : '') . '" placeholder="sem teto" class="curto"></label>'
+            . '<label>No canal' . $destino . '</label>'
+            . '<button type="submit" class="botao primario">Procurar</button>'
+            . '</form>';
+
+        if ($achados !== []) {
+            $html .= '<form method="post">'
+                . '<input type="hidden" name="acao" value="enviar-agora">'
+                . $this->tabela(
+                    ['Produto', 'Preço', 'De', 'Desconto', 'Ganho', ''],
+                    $corpo,
+                    '',
+                    6,
+                )
+                . '</form>'
+                . '<p class="dica">Enviar publica direto no grupo do canal escolhido e registra o envio, '
+                . 'então a fila não vai repetir esse produto depois.</p>';
+        } elseif ($descricao !== '') {
+            $html .= '<p class="dica">A busca cobre os produtos que a coleta já trouxe — não é uma busca '
+                . 'ao vivo no Mercado Livre, que bloqueia consulta por termo. Palavras mais curtas '
+                . 'costumam achar mais: "lavadora bateria" em vez da frase inteira.</p>';
+        }
+
+        $html .= '</section>';
+
+        return $this->layout('Enviar agora', '/enviar', $html, $recados);
+    }
+
+    /**
      * Conexao do WhatsApp: estado, QR code e os dois botoes de conserto.
      *
      * @param array<string,mixed>             $estado
@@ -1326,6 +1412,7 @@ final class Visao
             'Acompanhar' => [
                 '/'          => ['Visão geral', 'M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'],
                 '/fila'      => ['Fila', 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01'],
+                '/enviar'    => ['Enviar agora', 'M22 2 11 13M22 2l-7 20-4-9-9-4z'],
                 '/descartes' => ['Descartes', 'M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6'],
                 '/mensagem'  => ['Mensagem', 'M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.4 8.4 0 0 1 8.4-9 8.4 8.4 0 0 1 8.6 9z'],
             ],
@@ -2261,6 +2348,18 @@ final class Visao
             font-size: 9px; line-height: 9px; letter-spacing: 0; white-space: pre; overflow-x: auto;
         }
         .barra-acoes form { display: inline; }
+
+        /* ---------- enviar agora ---------- */
+        .busca-envio { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 0 0 18px; }
+        .busca-envio label { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--tinta-2); }
+        .busca-envio input, .busca-envio select {
+            padding: 8px 11px; border-radius: 8px; border: 1px solid var(--borda);
+            background: var(--papel); color: var(--tinta-1); font-size: 13.5px;
+        }
+        .busca-envio input[name="q"] { min-width: 300px; }
+        .busca-envio input.curto { width: 100px; }
+        .busca-envio input:focus, .busca-envio select:focus { outline: none; border-color: var(--acento); }
+        tr.ja-enviado { opacity: .68; }
 
         @media (max-width: 960px) { .grade.principal, .grade.secundaria { grid-template-columns: 1fr; } }
         @media (max-width: 760px) {

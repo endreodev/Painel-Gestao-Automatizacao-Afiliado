@@ -15,6 +15,7 @@ use MlGroup\Scraper\ColetorApi;
 use MlGroup\Scraper\ColetorInterface;
 use MlGroup\Scraper\ColetorNavegador;
 use MlGroup\Scraper\ColetorShopee;
+use MlGroup\Scraper\ColetorShopeeNavegador;
 use MlGroup\Support\Config;
 use MlGroup\Support\Logger;
 use Throwable;
@@ -237,17 +238,36 @@ final class Cacador
             return null;
         }
 
+        /*
+         * API primeiro, navegador depois - a mesma escada do Mercado Livre.
+         *
+         * A API de afiliados e melhor quando existe: responde rapido, ja traz o
+         * link de afiliado pronto e nao depende de sessao. Mas APP_ID e SECRET
+         * so saem para conta aprovada no programa, e conta nova nao tem. Antes,
+         * o sistema simplesmente pulava a busca e a Shopee ficava de fora sem
+         * prazo para voltar.
+         *
+         * Com o navegador, quem tem conta nova coleta do mesmo jeito: loga uma
+         * vez (php bin/mlgroup shopee-login) e a sessao guardada faz o resto.
+         */
         $shopee = $this->porLoja['shopee'] ??= new ColetorShopee();
 
-        if (!$shopee->disponivel()) {
-            Logger::i()->aviso('Busca da Shopee pulada: SHOPEE_APP_ID/SHOPEE_SECRET ausentes', [
-                'busca' => (string) ($busca['nome'] ?? ''),
-            ]);
-
-            return null;
+        if ($shopee->disponivel()) {
+            return $shopee;
         }
 
-        return $shopee;
+        $navegador = $this->porLoja['shopee-navegador'] ??= new ColetorShopeeNavegador();
+
+        if ($navegador->disponivel()) {
+            return $navegador;
+        }
+
+        Logger::i()->aviso('Busca da Shopee pulada: sem API e sem sessao no navegador', [
+            'busca'  => (string) ($busca['nome'] ?? ''),
+            'saida'  => 'php bin/mlgroup shopee-login',
+        ]);
+
+        return null;
     }
 
     /**

@@ -1,0 +1,13 @@
+2026/09/24-11:22:02.110 6368 Reusing MANIFEST D:\ml-group\storage\navegador-shopee\Default\Local Storage\leveldb/MANIFEST-000001
+2026/09/24-11:22:02.111 6368 Recovering log #14
+2026/09/24-11:22:02.111 6368 Level-0 table #16: started
+2026/09/24-11:22:02.116 6368 Level-0 table #16: 16378 bytes OK
+2026/09/24-11:22:02.120 6368 Delete type=0 #14
+2026/09/24-11:22:02.121 82cc Compacting 4@0 + 0@1 files
+2026/09/24-11:22:02.127 82cc Generated table #18@0: 37 keys, 65842 bytes
+2026/09/24-11:22:02.127 82cc Compacted 4@0 + 0@1 files => 65842 bytes
+2026/09/24-11:22:02.127 82cc compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/09/24-11:22:02.128 82cc Delete type=2 #7
+2026/09/24-11:22:02.128 82cc Delete type=2 #10
+2026/09/24-11:22:02.128 82cc Delete type=2 #13
+2026/09/24-11:22:02.128 82cc Delete type=2 #16
